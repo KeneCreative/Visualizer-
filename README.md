@@ -34,7 +34,9 @@ then visit http://localhost:8000/
    — the recording itself as the **Backing Track**. Route tracks onto shapes and
    tune the panel. The aligned MIDI drives the geometry; the recording is the
    transport audio and is included in Record captures. Use **Visual Offset**
-   (Capture & Session) to fine-tune picture vs. sound.
+   (Capture & Session) to fine-tune picture vs. sound, and **Backing Delay**
+   (Audio Mixer) to slide the recording itself. By default the RMS energy reacts
+   stage-wide; set **AUDIO ENERGY → APPLIES TO** to a single path to scope it.
 4. Capture (in-app **Record**, or the pre-roll countdown into OBS).
 
 The older path — render with the synth as a scratch track and lay the recording
