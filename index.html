@@ -110,11 +110,14 @@
         </div>
         <div id="energy-json-status" class="text-[10px] text-gray-500 mt-1">No file loaded — [{"t":0.0,"e":0.0}, ...]</div>
         <div class="mt-2"><span class="lbl">APPLIES TO</span>
-          <select id="energy-target"><option value="all">Whole stage</option></select>
+          <label class="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+            <input type="checkbox" id="energy-all" checked> Whole stage
+          </label>
+          <div id="energy-target-list" class="mt-1 pl-1 grid grid-cols-2 gap-x-2 gap-y-0.5 max-h-40 overflow-y-auto"></div>
           <div class="text-[10px] text-gray-500 mt-1 leading-snug">
-            Pick one path to make just that voice react to the mix — the rest of the
-            stage stays put. "Whole stage" is the old behaviour (scales everyone's
-            glow, size and trail at once).
+            "Whole stage" is the old behaviour (scales everyone's glow, size and trail
+            at once). Uncheck it and tick individual paths to have just those voices
+            react to the mix — the rest of the stage stays put.
           </div>
         </div>
         <div class="mt-2"><span class="lbl">GAIN <span class="text-gray-300 font-mono" id="ro-audiogain">10</span></span>
@@ -211,14 +214,19 @@
             <label class="flex items-center gap-2 text-xs text-gray-300 cursor-pointer mt-2">
               <input type="checkbox" id="mute-synth" checked> Mute synth while backing track is loaded
             </label>
-            <div class="mt-2"><span class="lbl">BACKING LEVEL <span class="text-gray-300 font-mono" id="ro-backing">0</span></span>
-              <input type="range" id="a-backing" data-readout="ro-backing" data-snap-mid="0" min="-48" max="6" step="1" value="0"></div>
-            <div class="mt-2">
-              <span class="lbl text-fuchsia-400">BACKING DELAY <span class="text-gray-300 font-mono" id="backingdelay-read">0 ms</span></span>
-              <input type="range" id="a-backingdelay" data-snap-mid="0" min="-5000" max="5000" step="10" value="0">
-              <div class="flex justify-between text-[10px] font-mono text-gray-500">
-                <span>-5000</span><span>+5000</span>
+            <div class="mt-2"><span class="lbl">BACKING LEVEL <span class="text-gray-500">dB</span></span>
+              <div class="flex items-center gap-2">
+                <input type="range" id="a-backing" data-snap-mid="0" min="-48" max="6" step="0.5" value="0" class="flex-1">
+                <input type="number" data-num-for="a-backing" min="-48" max="6" step="0.5" value="0" class="hex-input" style="width:60px;font-family:inherit;">
               </div>
+            </div>
+            <div class="mt-2">
+              <span class="lbl text-fuchsia-400">BACKING DELAY <span class="text-gray-500">ms</span></span>
+              <div class="flex items-center gap-2">
+                <input type="range" id="a-backingdelay" data-snap-mid="0" min="-5000" max="5000" step="0.5" value="0" class="flex-1">
+                <input type="number" data-num-for="a-backingdelay" min="-5000" max="5000" step="0.5" value="0" class="hex-input" style="width:74px;font-family:inherit;">
+              </div>
+              <div class="text-[10px] text-gray-500">Type an exact value — steps of 0.5&nbsp;ms.</div>
             </div>
             <div class="text-[10px] text-gray-500 mt-1 leading-snug">
               Plays the recording as the transport source; the DTW-aligned MIDI still drives the
@@ -881,7 +889,7 @@ function placeAt(shape, t, li, g, sc) {
 function defaultConfig() {
   const c = { bp: true, trail: 0.55, len: 2, thick: 2, vel: 0.5, glow: 1, vol: -12,
               backingVol: 0, muteSynth: true, backingDelay: 0,
-              rscale: 1, wispcap: 900, offset: 0, maxHold: 0, preroll: 3, energy: 1, screenShake: 0, audioEnergyGain: 10, audioEnergyTarget: 'all',
+              rscale: 1, wispcap: 900, offset: 0, maxHold: 0, preroll: 3, energy: 1, screenShake: 0, audioEnergyGain: 10, audioEnergyTargets: 'all',
               eqOn: false, eqTrack: 'all', eqBands: 24, eqColor: '#00e5ff', eqBase: 24, eqSpread: 84,
               eqOffX: 0, eqOffY: 0, eqDistX: 1, eqDistY: 1, eqSize: 1,
               voiceOn: false, voiceTrack: 'all', voiceBands: 32, voiceColor: '#ff3366', voiceBase: 36, voiceSpread: 60,
@@ -2112,8 +2120,23 @@ function applyInstrumentColor(trackIdx, color, inkColor) {
   uses.forEach(({ sid, li }) => {
     cfg.shapes[sid].lanes[li].color = color;
     cfg.shapes[sid].lanes[li].ink = ink;
+    // Update only the affected lane's own inputs. A full writeConfigToDOM()
+    // here reaches refreshTabTrackHighlights() -> buildInstrumentGroups(),
+    // which rebuilds this very swatch and slams the native colour picker
+    // shut on its first live 'input' event — so you could never actually
+    // browse colours, only commit whatever you first clicked.
+    [['color', color], ['ink', ink]].forEach(([field, val]) => {
+      document.querySelectorAll(`[data-cfg="lane.${sid}.${li}.${field}"]`).forEach(n => {
+        n.value = val;
+        const hx = n.nextElementSibling;
+        if (hx && hx.classList && hx.classList.contains('hex-input')) hx.value = val;
+      });
+    });
+    if (li === 0) {
+      const dot = document.querySelector(`[data-shape-dot="${sid}"]`);
+      if (dot) dot.style.background = color;
+    }
   });
-  writeConfigToDOM();
   invalidateBlueprint();
   document.querySelectorAll('.path-tab[data-select-shape]').forEach(btn => {
     btn.classList.toggle('has-instrument', shapeHasTrack(btn.dataset.selectShape));
@@ -2247,18 +2270,41 @@ function buildMixer() {
 buildRouting();
 buildShapeSections();
 
-/* RMS-energy target selector: "Whole stage" plus one entry per path. */
-(function initEnergyTarget() {
-  const sel = document.getElementById('energy-target');
-  if (!sel) return;
-  sel.innerHTML = '<option value="all">Whole stage</option>' +
-    SHAPES.map(s => `<option value="${s.id}">${escapeHtml(s.label)}</option>`).join('');
-  sel.value = (cfg.audioEnergyTarget && [...sel.options].some(o => o.value === cfg.audioEnergyTarget))
-    ? cfg.audioEnergyTarget : 'all';
-  sel.addEventListener('change', () => {
-    cfg.audioEnergyTarget = sel.value;
-    saveLocal();
+/* RMS-energy targets: "Whole stage", or any combination of individual
+   paths. cfg.audioEnergyTargets is the string 'all' or an array of shape
+   ids; shapeEnergy() and animate() read it straight each frame. */
+function syncEnergyTargetUI() {
+  const allCb = document.getElementById('energy-all');
+  const list  = document.getElementById('energy-target-list');
+  if (!allCb || !list) return;
+  const v = cfg.audioEnergyTargets;
+  const isAll = (v === 'all' || v == null);
+  const set = new Set(Array.isArray(v) ? v : []);
+  allCb.checked = isAll;
+  list.style.opacity = isAll ? 0.4 : 1;
+  list.querySelectorAll('[data-energy-path]').forEach(cb => {
+    cb.checked = set.has(cb.dataset.energyPath);
+    cb.disabled = isAll;
   });
+}
+(function initEnergyTargets() {
+  const allCb = document.getElementById('energy-all');
+  const list  = document.getElementById('energy-target-list');
+  if (!allCb || !list) return;
+  list.innerHTML = SHAPES.map(s =>
+    `<label class="flex items-center gap-1.5 text-[11px] text-gray-300 cursor-pointer truncate">
+       <input type="checkbox" data-energy-path="${s.id}"> ${escapeHtml(s.label)}
+     </label>`).join('');
+  const commit = () => {
+    cfg.audioEnergyTargets = allCb.checked
+      ? 'all'
+      : [...list.querySelectorAll('[data-energy-path]:checked')].map(cb => cb.dataset.energyPath);
+    syncEnergyTargetUI();
+    saveLocal();
+  };
+  allCb.addEventListener('change', commit);
+  list.querySelectorAll('[data-energy-path]').forEach(cb => cb.addEventListener('change', commit));
+  syncEnergyTargetUI();
 })();
 
 /* Collapsible sections */
@@ -2406,11 +2452,7 @@ G.forEach(([id, key]) => {
     cfg[key] = key === 'bp' ? n.value === '1' : parseFloat(n.value);
     if (key === 'vol' && masterVol) masterVol.volume.rampTo(cfg.vol, 0.05);
     if (key === 'backingVol' && backingVol) backingVol.volume.rampTo(cfg.backingVol, 0.05);
-    if (key === 'backingDelay') {
-      const ro = document.getElementById('backingdelay-read');
-      if (ro) ro.textContent = (cfg.backingDelay > 0 ? '+' : '') + Math.round(cfg.backingDelay) + ' ms';
-      backingSeek();   // re-place the recording live if it's playing
-    }
+    if (key === 'backingDelay') backingSeek();   // re-place the recording live if it's playing
     if (key === 'rscale') resize();
     if (key === 'wispcap') { petalCap = cfg.wispcap; if (petals.length > petalCap) petals.length = petalCap; }
     if (key === 'offset') { const el = document.getElementById('offset-read');
@@ -2464,6 +2506,30 @@ function enhanceColorInputs() {
 }
 enhanceColorInputs();
 
+/* Pairs a typeable <input type="number" data-num-for="slider-id"> with its
+   slider: the slider stays the coarse drag, the box takes an exact value
+   (e.g. a 0.5 ms backing delay). Editing the box drives the slider's own
+   input/change events so every existing binding still fires. */
+function enhanceNumberInputs() {
+  document.querySelectorAll('[data-num-for]').forEach(box => {
+    const slider = document.getElementById(box.dataset.numFor);
+    if (!slider) return;
+    const fromSlider = () => { box.value = slider.value; };
+    fromSlider();
+    slider.addEventListener('input', fromSlider);
+    slider.addEventListener('change', fromSlider);
+    const toSlider = (kind) => {
+      if (box.value === '' || box.value === '-') return;
+      slider.value = box.value;                       // the slider clamps to its own min/max
+      slider.dispatchEvent(new Event(kind, { bubbles: true }));
+      if (kind === 'change') box.value = slider.value; // reflect any clamp back
+    };
+    box.addEventListener('input',  () => toSlider('input'));
+    box.addEventListener('change', () => toSlider('change'));
+  });
+}
+enhanceNumberInputs();
+
 /* ------------------------------------------------------------
    PRESETS
    ------------------------------------------------------------ */
@@ -2507,11 +2573,11 @@ function writeConfigToDOM() {
   const muteSynthEl = document.getElementById('mute-synth');
   if (muteSynthEl) muteSynthEl.checked = cfg.muteSynth !== false;
   if (typeof applySynthMute === 'function') applySynthMute();
-  const bdRead = document.getElementById('backingdelay-read');
-  if (bdRead) bdRead.textContent = (cfg.backingDelay > 0 ? '+' : '') + Math.round(cfg.backingDelay || 0) + ' ms';
-  const etSel = document.getElementById('energy-target');
-  if (etSel) etSel.value = (cfg.audioEnergyTarget && [...etSel.options].some(o => o.value === cfg.audioEnergyTarget))
-    ? cfg.audioEnergyTarget : 'all';
+  document.querySelectorAll('[data-num-for]').forEach(box => {
+    const sl = document.getElementById(box.dataset.numFor);
+    if (sl) box.value = sl.value;
+  });
+  if (typeof syncEnergyTargetUI === 'function') syncEnergyTargetUI();
   if (typeof refreshHideButtons === 'function') refreshHideButtons();
   if (typeof refreshTabTrackHighlights === 'function') refreshTabTrackHighlights();
   // EQ Bars / Voice Circle controls aren't [data-cfg] elements (checkbox,
@@ -2562,6 +2628,19 @@ function repairConfig(c) {
     }
     if (!s.mirrors.includes(cur.mirror)) cur.mirror = d.mirror;
   });
+  // migrate the earlier single-target field to the multi-target one. The
+  // merge with defaultConfig() always leaves audioEnergyTargets at 'all',
+  // so a preset that only carries the old singular is spotted by it still
+  // naming a specific path while the new field sits at its default.
+  if (c.audioEnergyTarget != null && c.audioEnergyTarget !== 'all' &&
+      (c.audioEnergyTargets == null || c.audioEnergyTargets === 'all')) {
+    c.audioEnergyTargets = [c.audioEnergyTarget];
+  }
+  delete c.audioEnergyTarget;
+  if (Array.isArray(c.audioEnergyTargets)) {
+    c.audioEnergyTargets = c.audioEnergyTargets.filter(id => SHAPE_BY_ID[id]);
+    if (!c.audioEnergyTargets.length) c.audioEnergyTargets = 'all';
+  }
   return c;
 }
 
@@ -3313,20 +3392,25 @@ let currentPlaybackTime = 0;
    note length/thickness, and now wisp cap) reads effectiveEnergy
    instead — so loading a JSON makes the whole stage swell and drop
    with the real mix on top of whatever baseline you've set manually.
-   cfg.audioEnergyTarget narrows that: set to a shape id, the RMS
-   multiplier is kept out of effectiveEnergy and applied by shapeEnergy()
-   to just that one path (see below).
+   cfg.audioEnergyTargets narrows that: an array of shape ids keeps the
+   RMS multiplier out of effectiveEnergy and shapeEnergy() applies it to
+   only those paths (see below).
    ============================================================ */
 let audioEnergyData = null;   // [{t, e}, ...] sorted by t, or null if nothing loaded
 let effectiveEnergy = 1;      // cfg.energy, times the RMS multiplier only when it targets the whole stage
 let audioTargetMult = 1;      // the RMS multiplier itself, recomputed per frame
-/* cfg.audioEnergyTarget: 'all' (default, stage-wide) or a shape id. When it
-   names a shape, effectiveEnergy stays free of RMS and only that shape gets
-   the multiplier — so one voice reacts instead of everything ballooning. */
+/* cfg.audioEnergyTargets: 'all' (default, stage-wide — the multiplier is
+   already folded into effectiveEnergy) or an array of shape ids, in which
+   case effectiveEnergy stays RMS-free and only the listed shapes get the
+   multiplier — so a chosen subset of voices reacts instead of everything. */
+function audioIsStageWide() {
+  const v = cfg.audioEnergyTargets;
+  return v === 'all' || v == null;
+}
 function shapeEnergy(sid) {
-  return (cfg.audioEnergyTarget && cfg.audioEnergyTarget !== 'all' && cfg.audioEnergyTarget === sid)
-    ? effectiveEnergy * audioTargetMult
-    : effectiveEnergy;
+  if (audioIsStageWide()) return effectiveEnergy;
+  const v = cfg.audioEnergyTargets;
+  return (Array.isArray(v) && v.indexOf(sid) !== -1) ? effectiveEnergy * audioTargetMult : effectiveEnergy;
 }
 
 function getGlobalEnergy(t) {
@@ -3549,7 +3633,7 @@ function animate(now) {
   // live audio energy: a stage-wide multiplier folded into the ENERGY macro,
   // OR (when it targets one path) kept aside for shapeEnergy() to apply alone
   audioTargetMult = audioEnergyData ? (1 + getGlobalEnergy(t) * (cfg.audioEnergyGain != null ? cfg.audioEnergyGain : 10)) : 1;
-  const stageWide = !cfg.audioEnergyTarget || cfg.audioEnergyTarget === 'all';
+  const stageWide = audioIsStageWide();
   effectiveEnergy = (cfg.energy != null ? cfg.energy : 1) * (stageWide ? audioTargetMult : 1);
   petalCap = Math.max(50, Math.round((cfg.wispcap || 900) * effectiveEnergy));
   if (petals.length > petalCap) petals.length = petalCap;
