@@ -205,10 +205,20 @@
             </label>
             <div class="mt-2"><span class="lbl">BACKING LEVEL <span class="text-gray-300 font-mono" id="ro-backing">0</span></span>
               <input type="range" id="a-backing" data-readout="ro-backing" data-snap-mid="0" min="-48" max="6" step="1" value="0"></div>
+            <div class="mt-2">
+              <span class="lbl text-fuchsia-400">BACKING DELAY <span class="text-gray-300 font-mono" id="backingdelay-read">0 ms</span></span>
+              <input type="range" id="a-backingdelay" data-snap-mid="0" min="-5000" max="5000" step="10" value="0">
+              <div class="flex justify-between text-[10px] font-mono text-gray-500">
+                <span>-5000</span><span>+5000</span>
+              </div>
+            </div>
             <div class="text-[10px] text-gray-500 mt-1 leading-snug">
               Plays the recording as the transport source; the DTW-aligned MIDI still drives the
-              geometry. Nudge picture vs. sound with <span class="text-emerald-400">Visual Offset</span>
-              in Capture &amp; Session. The recording is included in Record captures.
+              geometry. <span class="text-fuchsia-300">Backing Delay</span> slides the recording later
+              (+, silence at the head — e.g. +1000 to start it a second in) or earlier (−) against the
+              MIDI, without re-aligning. Nudge the picture separately with
+              <span class="text-emerald-400">Visual Offset</span> in Capture &amp; Session. The
+              recording is included in Record captures.
             </div>
           </div>
 
@@ -862,7 +872,7 @@ function placeAt(shape, t, li, g, sc) {
    ============================================================ */
 function defaultConfig() {
   const c = { bp: true, trail: 0.55, len: 2, thick: 2, vel: 0.5, glow: 1, vol: -12,
-              backingVol: 0, muteSynth: true,
+              backingVol: 0, muteSynth: true, backingDelay: 0,
               rscale: 1, wispcap: 900, offset: 0, maxHold: 0, preroll: 3, energy: 1, screenShake: 0, audioEnergyGain: 10,
               eqOn: false, eqTrack: 'all', eqBands: 24, eqColor: '#00e5ff', eqBase: 24, eqSpread: 84,
               eqOffX: 0, eqOffY: 0, eqDistX: 1, eqDistY: 1, eqSize: 1,
@@ -1656,28 +1666,36 @@ function disposeAudio() {
   audioReady = false;
 }
 
-/* Start/stop the recording in lockstep with the Transport. */
-function backingStart(atTime, offset) {
-  if (!audioPlayer || !backingLoaded) return;
-  if (offset >= audioPlayer.buffer.duration) return;
-  try { audioPlayer.start(atTime, offset); } catch (e) {}
-}
+/* Start/stop the recording in lockstep with the Transport.
+   BACKING DELAY (cfg.backingDelay, ms) slides the recording against the
+   transport: at transport position tPos the buffer sits at tPos - delay.
+   A positive delay leaves silence at the head (start it "a second in");
+   a negative one begins further into the recording. */
+function backingDelaySec() { return (cfg.backingDelay || 0) / 1000; }
+
 function backingStop() {
   if (audioPlayer) { try { audioPlayer.stop(); } catch (e) {} }
 }
+
+/* anchorTime: AudioContext time to align to. tPos: transport position then. */
+function backingStartAt(anchorTime, tPos) {
+  if (!audioPlayer || !backingLoaded) return;
+  const dur = audioPlayer.buffer.duration;
+  const bufOff = tPos - backingDelaySec();
+  try {
+    if (bufOff >= dur) return;                          // recording already ended
+    if (bufOff >= 0) audioPlayer.start(anchorTime, bufOff);
+    else audioPlayer.start(anchorTime - bufOff, 0);     // -bufOff > 0: begin later, from the top
+  } catch (e) {}
+}
+
 let backingSeekTimer = null;
 function backingSeek() {
   if (!audioPlayer || !backingLoaded) return;
   clearTimeout(backingSeekTimer);
   backingSeekTimer = setTimeout(() => {
-    const at = Tone.Transport.seconds;
-    try {
-      if (Tone.Transport.state === 'started' && at < audioPlayer.buffer.duration) {
-        audioPlayer.restart(undefined, at);
-      } else {
-        audioPlayer.stop();
-      }
-    } catch (e) {}
+    backingStop();
+    if (Tone.Transport.state === 'started') backingStartAt(Tone.now() + 0.03, Tone.Transport.seconds);
   }, 60);
 }
 
@@ -1697,7 +1715,7 @@ async function beginPlayback() {
   const at = Tone.Transport.seconds;
   const startAt = Tone.now() + 0.05;   // schedule both on one clock time so they line up
   Tone.Transport.start(startAt, at);
-  backingStart(startAt, at);
+  backingStartAt(startAt, at);
   playBtn.textContent = 'Pause';
 }
 function startWithPreroll() {
@@ -2356,6 +2374,7 @@ function bindControls() {
 /* globals */
 const G = [['g-bp', 'bp'], ['g-trail', 'trail'], ['g-len', 'len'], ['g-thick', 'thick'],
            ['g-vel', 'vel'], ['g-glow', 'glow'], ['a-vol', 'vol'], ['a-backing', 'backingVol'],
+           ['a-backingdelay', 'backingDelay'],
            ['g-rscale', 'rscale'], ['g-wispcap', 'wispcap'], ['g-offset', 'offset'],
            ['g-maxhold', 'maxHold'], ['g-preroll', 'preroll'], ['g-energy', 'energy'],
            ['g-screenshake', 'screenShake'], ['g-audiogain', 'audioEnergyGain']];
@@ -2365,6 +2384,11 @@ G.forEach(([id, key]) => {
     cfg[key] = key === 'bp' ? n.value === '1' : parseFloat(n.value);
     if (key === 'vol' && masterVol) masterVol.volume.rampTo(cfg.vol, 0.05);
     if (key === 'backingVol' && backingVol) backingVol.volume.rampTo(cfg.backingVol, 0.05);
+    if (key === 'backingDelay') {
+      const ro = document.getElementById('backingdelay-read');
+      if (ro) ro.textContent = (cfg.backingDelay > 0 ? '+' : '') + Math.round(cfg.backingDelay) + ' ms';
+      backingSeek();   // re-place the recording live if it's playing
+    }
     if (key === 'rscale') resize();
     if (key === 'wispcap') { petalCap = cfg.wispcap; if (petals.length > petalCap) petals.length = petalCap; }
     if (key === 'offset') { const el = document.getElementById('offset-read');
@@ -2461,6 +2485,8 @@ function writeConfigToDOM() {
   const muteSynthEl = document.getElementById('mute-synth');
   if (muteSynthEl) muteSynthEl.checked = cfg.muteSynth !== false;
   if (typeof applySynthMute === 'function') applySynthMute();
+  const bdRead = document.getElementById('backingdelay-read');
+  if (bdRead) bdRead.textContent = (cfg.backingDelay > 0 ? '+' : '') + Math.round(cfg.backingDelay || 0) + ' ms';
   if (typeof refreshHideButtons === 'function') refreshHideButtons();
   if (typeof refreshTabTrackHighlights === 'function') refreshTabTrackHighlights();
   // EQ Bars / Voice Circle controls aren't [data-cfg] elements (checkbox,
@@ -2661,7 +2687,7 @@ document.getElementById('audio-upload').addEventListener('change', async (e) => 
     if (wasPlaying) {
       const startAt = Tone.now() + 0.05;
       Tone.Transport.start(startAt, at);
-      backingStart(startAt, at);
+      backingStartAt(startAt, at);
     }
   } catch (err) {
     backingLoaded = false;
