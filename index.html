@@ -109,6 +109,14 @@
           <input type="file" id="json-upload" accept=".json,application/json" class="text-[10px] text-gray-400 flex-1">
         </div>
         <div id="energy-json-status" class="text-[10px] text-gray-500 mt-1">No file loaded — [{"t":0.0,"e":0.0}, ...]</div>
+        <div class="mt-2"><span class="lbl">APPLIES TO</span>
+          <select id="energy-target"><option value="all">Whole stage</option></select>
+          <div class="text-[10px] text-gray-500 mt-1 leading-snug">
+            Pick one path to make just that voice react to the mix — the rest of the
+            stage stays put. "Whole stage" is the old behaviour (scales everyone's
+            glow, size and trail at once).
+          </div>
+        </div>
         <div class="mt-2"><span class="lbl">GAIN <span class="text-gray-300 font-mono" id="ro-audiogain">10</span></span>
           <input type="range" id="g-audiogain" data-readout="ro-audiogain" min="0" max="50" step="1" value="10"
             title="Scales the raw RMS value before it multiplies into ENERGY — raise this if your JSON's energy values are small and the stage barely reacts."></div>
@@ -873,7 +881,7 @@ function placeAt(shape, t, li, g, sc) {
 function defaultConfig() {
   const c = { bp: true, trail: 0.55, len: 2, thick: 2, vel: 0.5, glow: 1, vol: -12,
               backingVol: 0, muteSynth: true, backingDelay: 0,
-              rscale: 1, wispcap: 900, offset: 0, maxHold: 0, preroll: 3, energy: 1, screenShake: 0, audioEnergyGain: 10,
+              rscale: 1, wispcap: 900, offset: 0, maxHold: 0, preroll: 3, energy: 1, screenShake: 0, audioEnergyGain: 10, audioEnergyTarget: 'all',
               eqOn: false, eqTrack: 'all', eqBands: 24, eqColor: '#00e5ff', eqBase: 24, eqSpread: 84,
               eqOffX: 0, eqOffY: 0, eqDistX: 1, eqDistY: 1, eqSize: 1,
               voiceOn: false, voiceTrack: 'all', voiceBands: 32, voiceColor: '#ff3366', voiceBase: 36, voiceSpread: 60,
@@ -2239,6 +2247,20 @@ function buildMixer() {
 buildRouting();
 buildShapeSections();
 
+/* RMS-energy target selector: "Whole stage" plus one entry per path. */
+(function initEnergyTarget() {
+  const sel = document.getElementById('energy-target');
+  if (!sel) return;
+  sel.innerHTML = '<option value="all">Whole stage</option>' +
+    SHAPES.map(s => `<option value="${s.id}">${escapeHtml(s.label)}</option>`).join('');
+  sel.value = (cfg.audioEnergyTarget && [...sel.options].some(o => o.value === cfg.audioEnergyTarget))
+    ? cfg.audioEnergyTarget : 'all';
+  sel.addEventListener('change', () => {
+    cfg.audioEnergyTarget = sel.value;
+    saveLocal();
+  });
+})();
+
 /* Collapsible sections */
 document.addEventListener('click', e => {
   const hd = e.target.closest('[data-toggle]');
@@ -2487,6 +2509,9 @@ function writeConfigToDOM() {
   if (typeof applySynthMute === 'function') applySynthMute();
   const bdRead = document.getElementById('backingdelay-read');
   if (bdRead) bdRead.textContent = (cfg.backingDelay > 0 ? '+' : '') + Math.round(cfg.backingDelay || 0) + ' ms';
+  const etSel = document.getElementById('energy-target');
+  if (etSel) etSel.value = (cfg.audioEnergyTarget && [...etSel.options].some(o => o.value === cfg.audioEnergyTarget))
+    ? cfg.audioEnergyTarget : 'all';
   if (typeof refreshHideButtons === 'function') refreshHideButtons();
   if (typeof refreshTabTrackHighlights === 'function') refreshTabTrackHighlights();
   // EQ Bars / Voice Circle controls aren't [data-cfg] elements (checkbox,
@@ -3288,9 +3313,21 @@ let currentPlaybackTime = 0;
    note length/thickness, and now wisp cap) reads effectiveEnergy
    instead — so loading a JSON makes the whole stage swell and drop
    with the real mix on top of whatever baseline you've set manually.
+   cfg.audioEnergyTarget narrows that: set to a shape id, the RMS
+   multiplier is kept out of effectiveEnergy and applied by shapeEnergy()
+   to just that one path (see below).
    ============================================================ */
 let audioEnergyData = null;   // [{t, e}, ...] sorted by t, or null if nothing loaded
-let effectiveEnergy = 1;      // cfg.energy * live audio multiplier, recomputed once per frame
+let effectiveEnergy = 1;      // cfg.energy, times the RMS multiplier only when it targets the whole stage
+let audioTargetMult = 1;      // the RMS multiplier itself, recomputed per frame
+/* cfg.audioEnergyTarget: 'all' (default, stage-wide) or a shape id. When it
+   names a shape, effectiveEnergy stays free of RMS and only that shape gets
+   the multiplier — so one voice reacts instead of everything ballooning. */
+function shapeEnergy(sid) {
+  return (cfg.audioEnergyTarget && cfg.audioEnergyTarget !== 'all' && cfg.audioEnergyTarget === sid)
+    ? effectiveEnergy * audioTargetMult
+    : effectiveEnergy;
+}
 
 function getGlobalEnergy(t) {
   const arr = audioEnergyData;
@@ -3330,10 +3367,14 @@ function loadEnergyJson(file) {
 
 function renderShapes(t, frameDt) {
   currentPlaybackTime = t;
-  const glowAmt = cfg.glow * effectiveEnergy;
 
   for (const s of SHAPES) {
     const sc = cfg.shapes[s.id];
+    // RMS energy is either folded into effectiveEnergy for the whole stage
+    // (audioEnergyTarget === 'all') or applied to just one path here, so
+    // loading a JSON doesn't blow up glow/size/trail everywhere at once.
+    const se = shapeEnergy(s.id);
+    const glowAmt = cfg.glow * se;
 
     for (let li = 0; li < s.lanes.length; li++) {
       const lane = sc.lanes[li];
@@ -3398,8 +3439,8 @@ function renderShapes(t, frameDt) {
           }
         }
 
-        const lenScale = (sc.lenScale != null ? sc.lenScale : 1) * effectiveEnergy;
-        const thickScale = (sc.thickScale != null ? sc.thickScale : 1) * effectiveEnergy;
+        const lenScale = (sc.lenScale != null ? sc.lenScale : 1) * se;
+        const thickScale = (sc.thickScale != null ? sc.thickScale : 1) * se;
         const lenS = cfg.len * vs * lenScale, thickS = cfg.thick * vs * thickScale;
         const ga = glowAmt * life;
         // point-reflected mirror modes ('lr'/'radial') can just flip each
@@ -3505,12 +3546,16 @@ function animate(now) {
   const t = tRaw + (cfg.offset || 0) / 1000;
   const pw = canvas.width, ph = canvas.height;
 
-  // live audio energy folds into the ENERGY macro before anything reads it this frame
-  const audioMult = audioEnergyData ? (1 + getGlobalEnergy(t) * (cfg.audioEnergyGain != null ? cfg.audioEnergyGain : 10)) : 1;
-  effectiveEnergy = (cfg.energy != null ? cfg.energy : 1) * audioMult;
+  // live audio energy: a stage-wide multiplier folded into the ENERGY macro,
+  // OR (when it targets one path) kept aside for shapeEnergy() to apply alone
+  audioTargetMult = audioEnergyData ? (1 + getGlobalEnergy(t) * (cfg.audioEnergyGain != null ? cfg.audioEnergyGain : 10)) : 1;
+  const stageWide = !cfg.audioEnergyTarget || cfg.audioEnergyTarget === 'all';
+  effectiveEnergy = (cfg.energy != null ? cfg.energy : 1) * (stageWide ? audioTargetMult : 1);
   petalCap = Math.max(50, Math.round((cfg.wispcap || 900) * effectiveEnergy));
   if (petals.length > petalCap) petals.length = petalCap;
-  if (liveEnergyEl) liveEnergyEl.textContent = effectiveEnergy.toFixed(2);
+  if (liveEnergyEl) liveEnergyEl.textContent = stageWide
+    ? effectiveEnergy.toFixed(2)
+    : effectiveEnergy.toFixed(2) + ' · rms ×' + audioTargetMult.toFixed(2);
 
   // 1. decay the persistent trail target
   fadeTrail(fadeAlpha(dt), pw, ph);
