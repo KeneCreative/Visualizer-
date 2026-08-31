@@ -1,0 +1,21 @@
+# Large media — keep these local, not in git
+*.wav
+*.mp3
+*.flac
+*.m4a
+*.ogg
+*.mp4
+*.mov
+*.webm
+
+# Rendered captures
+mam-capture*.webm
+
+# OS / editor cruft
+Thumbs.db
+.DS_Store
+*.swp
+
+# MuseScore backups
+*.mscz~
+.mscbackup/

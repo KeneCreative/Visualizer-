@@ -1,0 +1,279 @@
+{
+  "bp": false,
+  "trail": 0,
+  "len": 5.25,
+  "thick": 0.75,
+  "vel": 0.5,
+  "glow": 1,
+  "vol": -12,
+  "rscale": 1,
+  "wispcap": 1500,
+  "offset": 0,
+  "maxHold": 4,
+  "shapes": {
+    "diag": {
+      "track": "1",
+      "base": 48,
+      "spread": 70,
+      "mirror": "none",
+      "lanes": [
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        },
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        },
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        },
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        }
+      ],
+      "ink": "#0db5fd",
+      "glow": "#0db5fd",
+      "petalAmt": 0,
+      "bloomAmt": 0,
+      "petalFall": 0,
+      "offY": 4
+    },
+    "pent": {
+      "track": "none",
+      "base": 50,
+      "spread": 36,
+      "mirror": "lr",
+      "lanes": [
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        }
+      ],
+      "glow": "#0db5fd",
+      "ink": "#0db5fd",
+      "wispLife": 0.6
+    },
+    "ring": {
+      "track": "none",
+      "base": 55,
+      "spread": 52,
+      "mirror": "radial",
+      "lanes": [
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        }
+      ],
+      "wispLife": 0,
+      "glow": "#c90352",
+      "ink": "#c78ec3",
+      "noteShape": "circle",
+      "revAmt": 0,
+      "bloomAmt": 0,
+      "vibRate": 0.5
+    },
+    "ladder": {
+      "track": "3",
+      "base": 26,
+      "spread": 65,
+      "mirror": "lr",
+      "lanes": [
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "backward"
+        }
+      ],
+      "glow": "#e7eef4",
+      "bloomAmt": 0,
+      "revAmt": 0.02,
+      "petalAmt": 0.78,
+      "petalFall": 151,
+      "scale": 1.6,
+      "wispLife": 1.1,
+      "offX": 356
+    },
+    "diam": {
+      "track": "none",
+      "base": 51,
+      "spread": 35,
+      "mirror": "lr",
+      "lanes": [
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        }
+      ],
+      "wispLife": 1.05,
+      "ink": "#0db5fd",
+      "glow": "#0db5fd",
+      "revAmt": 0,
+      "bloomAmt": 0,
+      "petalAmt": 0,
+      "petalFall": 0,
+      "scale": 1.5
+    },
+    "parc": {
+      "track": "none",
+      "base": 33,
+      "spread": 53,
+      "mirror": "none",
+      "lanes": [
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "backward"
+        },
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        }
+      ],
+      "glow": "#e8e7e9",
+      "ink": "#e1dfe7",
+      "wispLife": 2.6,
+      "bloomAmt": 0.12,
+      "noteShape": "line"
+    },
+    "barc": {
+      "track": "none",
+      "base": 39,
+      "spread": 54,
+      "mirror": "lr",
+      "lanes": [
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        }
+      ],
+      "glow": "#c90352",
+      "ink": "#c78ec3",
+      "wispLife": 0.35,
+      "revAmt": 0.05,
+      "bloomAmt": 0,
+      "noteShape": "line"
+    },
+    "liss": {
+      "track": "2",
+      "base": 29,
+      "spread": 67,
+      "mirror": "opp",
+      "lanes": [
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "backward"
+        }
+      ],
+      "glow": "#b8dd31",
+      "ink": "#bcc729",
+      "wispLife": 2.5,
+      "bloomAmt": 0,
+      "revAmt": 0.49,
+      "petalAmt": 0.56,
+      "vibRate": 0.5,
+      "petalFall": 167,
+      "noteShape": "line"
+    },
+    "spiral": {
+      "track": "0",
+      "base": 45,
+      "spread": 38,
+      "mirror": "none",
+      "lanes": [
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        },
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        }
+      ],
+      "wispLife": 0.2,
+      "ink": "#0f340f",
+      "glow": "#20d580",
+      "noteShape": "line",
+      "bloomAmt": 0,
+      "petalAmt": 0.23,
+      "petalFall": 0,
+      "offX": -36,
+      "revAmt": 0.54
+    },
+    "hypo": {
+      "track": "none",
+      "base": 40,
+      "spread": 38,
+      "mirror": "lr",
+      "lanes": [
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        }
+      ],
+      "ink": "#c78ec3",
+      "glow": "#c90352",
+      "petalAmt": 0.23,
+      "noteShape": "line"
+    },
+    "stairSpiral": {
+      "track": "0",
+      "base": 41,
+      "spread": 64,
+      "mirror": "lr",
+      "glow": "#fd0d0d",
+      "ink": "#d2bcbf",
+      "scale": 0.6,
+      "wispLife": 1.35,
+      "revAmt": 0.08,
+      "revBass": true,
+      "bloomAmt": 0,
+      "noteShape": "circle",
+      "vibAmt": 0,
+      "vibRate": 5,
+      "petalAmt": 0.52,
+      "petalFall": 151,
+      "lanes": [
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "backward"
+        },
+        {
+          "on": true,
+          "track": "1",
+          "dir": "backward"
+        }
+      ],
+      "offX": 204
+    }
+  },
+  "mutes": {
+    "1": false,
+    "3": false,
+    "4": false,
+    "5": false,
+    "6": false,
+    "7": false,
+    "8": false,
+    "9": false,
+    "10": false,
+    "11": false,
+    "12": false
+  }
+}

@@ -1,0 +1,202 @@
+{
+  "bp": false,
+  "trail": 0,
+  "len": 5.25,
+  "thick": 0.75,
+  "vel": 0.5,
+  "glow": 1,
+  "vol": -12,
+  "rscale": 1,
+  "wispcap": 1500,
+  "shapes": {
+    "diag": {
+      "track": "0",
+      "base": 51,
+      "spread": 61,
+      "mirror": "none",
+      "lanes": [
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        },
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        },
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        },
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        }
+      ],
+      "ink": "#0db5fd",
+      "glow": "#0db5fd"
+    },
+    "pent": {
+      "track": "1",
+      "base": 45,
+      "spread": 41,
+      "mirror": "lr",
+      "lanes": [
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        }
+      ],
+      "glow": "#ff00ff",
+      "ink": "#ffccff",
+      "wispLife": 0.6
+    },
+    "ring": {
+      "track": "none",
+      "base": 56,
+      "spread": 34,
+      "mirror": "lr",
+      "lanes": [
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        }
+      ],
+      "wispLife": 0.25,
+      "glow": "#ff00ff",
+      "ink": "#ffccff"
+    },
+    "ladder": {
+      "track": "none",
+      "base": 21,
+      "spread": 60,
+      "mirror": "lr",
+      "lanes": [
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        }
+      ]
+    },
+    "diam": {
+      "track": "1",
+      "base": 39,
+      "spread": 68,
+      "mirror": "lr",
+      "lanes": [
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        }
+      ],
+      "wispLife": 1.3
+    },
+    "parc": {
+      "track": "3",
+      "base": 23,
+      "spread": 56,
+      "mirror": "none",
+      "lanes": [
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "backward"
+        },
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        }
+      ],
+      "glow": "#26067f",
+      "ink": "#26067f",
+      "wispLife": 2.6
+    },
+    "barc": {
+      "track": "none",
+      "base": 34,
+      "spread": 47,
+      "mirror": "none",
+      "lanes": [
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        }
+      ],
+      "glow": "#26067f",
+      "ink": "#26067f",
+      "wispLife": 0.35
+    },
+    "liss": {
+      "track": "none",
+      "base": 46,
+      "spread": 37,
+      "mirror": "lr",
+      "lanes": [
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        }
+      ],
+      "glow": "#07cf5e",
+      "ink": "#07cf5e",
+      "wispLife": 0.4
+    },
+    "spiral": {
+      "track": "2",
+      "base": 36,
+      "spread": 60,
+      "mirror": "lr",
+      "lanes": [
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        },
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        }
+      ],
+      "wispLife": 0.2
+    },
+    "hypo": {
+      "track": "0",
+      "base": 37,
+      "spread": 51,
+      "mirror": "lr",
+      "lanes": [
+        {
+          "on": true,
+          "track": "shared",
+          "dir": "forward"
+        }
+      ],
+      "ink": "#0db5fd",
+      "glow": "#0db5fd"
+    }
+  },
+  "mutes": {
+    "1": false,
+    "3": false,
+    "4": false,
+    "5": false,
+    "6": false,
+    "7": false,
+    "8": false,
+    "9": false,
+    "10": false,
+    "11": false,
+    "12": false
+  }
+}

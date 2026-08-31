@@ -1,0 +1,3483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Geometric MIDI Stage — MAM Player</title>
+<script src="vendor/tailwindcss.js"></script>
+<script src="vendor/tone.js"></script>
+<script src="vendor/midi.js"></script>
+<style>
+  body, html { margin:0; padding:0; width:100%; height:100%; overflow:hidden; background:#050508; font-family:'Inter',system-ui,sans-serif; color:#e5e7eb; }
+  canvas#stage { display:block; width:100%; height:100%; }
+  #countdown-overlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    pointer-events:none; font-size:min(22vw,22vh); font-weight:800; color:#00ffaa;
+    font-family:'Inter',system-ui,sans-serif; text-shadow:0 0 40px rgba(0,255,170,.8), 0 0 100px rgba(0,255,170,.5); }
+  #ui-layer { position:absolute; inset:0; pointer-events:none; display:flex; flex-direction:column; justify-content:space-between; padding:1.5rem; }
+  .panel { background:rgba(10,10,15,.85); border:1px solid rgba(255,255,255,.15); backdrop-filter:blur(12px); pointer-events:auto; border-radius:.75rem; padding:1.25rem; max-width:340px; box-shadow:0 10px 30px rgba(0,0,0,.5); max-height:92vh; overflow-y:auto; }
+  .btn { background:linear-gradient(135deg,#00ffaa,#00aaff); color:#000; font-weight:700; text-transform:uppercase; letter-spacing:.05em; padding:.6rem 1rem; border-radius:.5rem; cursor:pointer; transition:all .2s; border:none; width:100%; font-size:.8rem; }
+  .btn:hover:not(:disabled) { box-shadow:0 0 20px rgba(0,255,170,.5); transform:translateY(-1px); }
+  .btn:disabled { background:#333; color:#666; cursor:not-allowed; box-shadow:none; transform:none; }
+  .btn-sm { background:rgba(255,255,255,.08); border:1px solid #444; color:#ccc; font-size:.7rem; padding:.35rem .5rem; border-radius:.35rem; cursor:pointer; text-transform:uppercase; letter-spacing:.04em; }
+  .btn-sm:hover { background:rgba(255,255,255,.16); color:#fff; }
+  .btn-rec { border-color:#f43f5e; color:#fda4af; }
+  .btn-rec.active { background:#f43f5e; color:#fff; }
+  input[type="file"] { width:100%; color:#ccc; font-size:.8rem; }
+  input[type="file"]::file-selector-button, input[type="file"]::-webkit-file-upload-button {
+    background:rgba(255,255,255,.1); border:1px solid #555; color:#fff; border-radius:4px;
+    padding:4px 10px; margin-right:8px; cursor:pointer; font-size:.72rem; font-weight:600; }
+  input[type="file"]::file-selector-button:hover, input[type="file"]::-webkit-file-upload-button:hover {
+    background:rgba(255,255,255,.2); }
+  select, input[type="number"], input[type="range"] { background:rgba(0,0,0,.5); border:1px solid #555; color:#fff; border-radius:4px; padding:2px 5px; width:100%; font-size:.72rem; outline:none; }
+  select { -webkit-appearance:none; -moz-appearance:none; appearance:none;
+    background-image:url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2399a1af'%3e%3cpath d='M7 10l5 5 5-5z'/%3e%3c/svg%3e");
+    background-repeat:no-repeat; background-position:right 4px center; background-size:14px; padding-right:20px; }
+  select option { background:#12141a; color:#fff; }
+  input[type="range"] { padding:0; }
+  input[type="checkbox"] { accent-color:#00ffaa; width:13px; height:13px; }
+  .sect { margin-top:.85rem; border-top:1px solid #1f2937; padding-top:.6rem; }
+  .sect-hd { display:flex; justify-content:space-between; align-items:center; cursor:pointer; user-select:none; margin-bottom:.25rem; }
+  .sect-hd:hover .toggle-icon { color:#fff; }
+  .collapsed { display:none !important; }
+  .lbl { font-size:10px; letter-spacing:.04em; color:#9ca3af; margin-bottom:2px; display:block; }
+  .swatch { width:14px; height:14px; padding:0; border:1px solid rgba(255,255,255,.35); border-radius:3px; margin-right:8px; flex:0 0 auto; cursor:pointer; background:none; appearance:none; -webkit-appearance:none; }
+  .hex-input { width:64px; background:rgba(0,0,0,.5); border:1px solid #555; color:#fff; border-radius:4px;
+    padding:2px 5px; font-size:.7rem; font-family:monospace; outline:none; margin-left:6px; text-transform:uppercase; }
+  .hex-input:focus { border-color:#67e8f9; }
+  .swatch::-webkit-color-swatch-wrapper { padding:0; }
+  .swatch::-webkit-color-swatch { border:none; border-radius:2px; }
+  .swatch::-moz-color-swatch { border:none; border-radius:2px; }
+  .lane-row { display:grid; grid-template-columns:14px 18px 18px 1fr 1fr; gap:6px; align-items:center; margin-bottom:5px; }
+  .lane-group-label { font-size:10px; font-weight:700; letter-spacing:.05em; color:#8b96a8; text-transform:uppercase;
+    margin:8px 0 4px; padding-top:6px; border-top:1px solid #2a2f3a; }
+  .lane-group-label:first-child { margin-top:0; padding-top:0; border-top:none; }
+  .path-tab-group { display:inline-flex; align-items:stretch; gap:2px; }
+  .path-tab { background:rgba(255,255,255,.06); border:1px solid #444; border-radius:6px 0 0 6px;
+    padding:4px 7px; font-size:10px; color:#aaa; cursor:pointer; display:flex; align-items:center;
+    font-family:monospace; line-height:1; }
+  .path-tab:hover { background:rgba(255,255,255,.14); color:#fff; }
+  .path-tab-active { border-color:#00ffaa; color:#fff; background:rgba(0,255,170,.14); }
+  .path-tab.has-instrument { box-shadow:0 0 0 1px #ffd24d; }
+  .path-tab.has-instrument.path-tab-active { box-shadow:0 0 0 1px #ffd24d; border-color:#00ffaa; }
+  .tab-hide-btn { background:rgba(255,255,255,.06); border:1px solid #444; border-left:none; border-radius:0 6px 6px 0;
+    padding:4px 6px; font-size:10px; color:#aaa; cursor:pointer; line-height:1; }
+  .tab-hide-btn:hover { color:#fff; background:rgba(255,255,255,.14); }
+  .tab-hide-btn.tab-hidden { color:#ff6b6b; border-color:#a33; background:rgba(255,80,80,.12); }
+  .tab-dot { width:9px; height:9px; border-radius:2px; margin-right:5px; flex:0 0 auto; }
+  .sub-hd { font-size:11px; font-weight:600; letter-spacing:.04em; color:#67e8f9; margin:.6rem 0 .3rem; text-transform:uppercase; }
+  ::-webkit-scrollbar { width:8px; } ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:#333; border-radius:4px; }
+</style>
+</head>
+<body>
+
+<canvas id="stage"></canvas>
+<div id="countdown-overlay"></div>
+
+<div id="ui-layer">
+  <div class="panel" id="main-panel">
+    <div class="sect-hd" data-toggle="main-body">
+      <h1 class="text-lg font-bold text-white tracking-wide">STAGE ROUTER</h1>
+      <span class="text-xs text-cyan-400 font-mono toggle-icon">[-]</span>
+    </div>
+    <div id="main-body">
+      <p class="text-xs text-gray-400 mb-3">Load a MIDI file to map tracks onto geometry.</p>
+      <input type="file" id="midi-upload" accept=".mid,.midi">
+      <div id="load-error" class="text-xs text-rose-400 mt-2 collapsed"></div>
+
+      <div class="grid grid-cols-3 gap-2 mt-3">
+        <button id="play-btn" class="btn col-span-2" disabled>Load MIDI</button>
+        <button id="stop-btn" class="btn-sm" disabled>Stop</button>
+      </div>
+
+      <div class="mt-3">
+        <input type="range" id="seek" min="0" max="1" step="0.001" value="0" disabled>
+        <div class="flex justify-between text-[10px] font-mono text-gray-500 mt-1">
+          <span id="time-now">00:00.00</span><span id="time-total">00:00.00</span>
+        </div>
+      </div>
+
+      <div class="mt-3">
+        <span class="lbl text-amber-400">⚡ ENERGY <span class="text-gray-300 font-mono" id="ro-energy">1</span></span>
+        <input type="range" id="g-energy" data-readout="ro-energy" data-snap-mid="1" min="0" max="2" step="0.05" value="1"
+          title="Scales Glow, Trail, and Size together — a quick 'turn it up' without touching three sliders individually.">
+      </div>
+
+      <div class="mt-2">
+        <span class="lbl text-fuchsia-400">AUDIO ENERGY (RMS JSON)</span>
+        <div class="flex items-center gap-2 mt-1">
+          <input type="file" id="json-upload" accept=".json,application/json" class="text-[10px] text-gray-400 flex-1">
+        </div>
+        <div id="energy-json-status" class="text-[10px] text-gray-500 mt-1">No file loaded — [{"t":0.0,"e":0.0}, ...]</div>
+        <div class="mt-2"><span class="lbl">GAIN <span class="text-gray-300 font-mono" id="ro-audiogain">10</span></span>
+          <input type="range" id="g-audiogain" data-readout="ro-audiogain" min="0" max="50" step="1" value="10"
+            title="Scales the raw RMS value before it multiplies into ENERGY — raise this if your JSON's energy values are small and the stage barely reacts."></div>
+        <div class="text-[10px] text-gray-500 mt-1">Live effective energy: <span class="font-mono text-fuchsia-300" id="ro-liveenergy">1.00</span></div>
+      </div>
+
+      <div class="sect" id="routing-sect">
+        <div class="sect-hd" data-toggle="routing-body">
+          <span class="text-sm font-semibold text-white">Routing &amp; Paths</span>
+          <span class="text-xs text-cyan-400 font-mono toggle-icon">[-]</span>
+        </div>
+        <div id="routing-body">
+          <span class="lbl">PATH EDITOR</span>
+          <div id="path-tabs" class="flex flex-wrap gap-1.5 mb-2"></div>
+          <label class="flex items-center gap-2 text-xs text-gray-300 cursor-pointer mb-1">
+            <input type="checkbox" id="path-preview" checked> Preview selected path even when Blueprint is off
+          </label>
+          <label class="flex items-center gap-2 text-xs text-gray-300 cursor-pointer mb-2">
+            <input type="checkbox" id="isolate-path" checked> Isolate selected path on the blueprint
+          </label>
+          <div id="shape-sections"></div>
+          <div class="sub-hd">Track Assignment</div>
+          <div id="routing-matrix"></div>
+
+          <div class="sub-hd">Instrument Colors</div>
+          <div class="text-[10px] text-gray-500 mb-2 leading-snug">
+            Every lane routed to the same MIDI track, listed once — change its color here and it
+            updates everywhere that instrument shows up, instead of hunting down and matching each
+            lane by hand.
+          </div>
+          <button type="button" class="btn-sm mb-2" id="randomize-colors">🎲 Randomize Colors</button>
+          <div id="instrument-groups"></div>
+        </div>
+      </div>
+
+      <div class="sect">
+        <div class="sect-hd" data-toggle="global-body">
+          <span class="text-sm font-semibold text-white">Stage &amp; Trails</span>
+          <span class="text-xs text-cyan-400 font-mono toggle-icon">[+]</span>
+        </div>
+        <div id="global-body" class="collapsed">
+          <div class="grid grid-cols-2 gap-3 mt-2">
+            <div><span class="lbl">BLUEPRINT</span>
+              <select id="g-bp"><option value="1">Visible</option><option value="0">Hidden</option></select></div>
+            <div><span class="lbl text-cyan-400">TRAIL LENGTH</span>
+              <input type="range" id="g-trail" data-snap-mid="0" min="0" max="1" step="0.01" value="0.55"></div>
+            <div><span class="lbl">NOTE LENGTH</span>
+              <input type="number" id="g-len" value="2" step="0.25" min="0.25" max="6"></div>
+            <div><span class="lbl">NOTE THICKNESS</span>
+              <input type="number" id="g-thick" value="2" step="0.25" min="0.25" max="8"></div>
+            <div><span class="lbl text-cyan-400">VELOCITY &rarr; SIZE</span>
+              <input type="range" id="g-vel" data-snap-mid="0.5" min="0" max="1" step="0.01" value="0.5"></div>
+            <div><span class="lbl text-cyan-400">GLOW</span>
+              <input type="range" id="g-glow" data-snap-mid="1" min="0" max="2" step="0.05" value="1"></div>
+            <div><span class="lbl text-amber-400">RENDER SCALE</span>
+              <input type="range" id="g-rscale" data-snap-mid="1" min="0.5" max="1" step="0.05" value="1"
+                title="Lower = fewer pixels to push. Biggest single perf lever."></div>
+            <div><span class="lbl text-amber-400">MAX PARTICLES</span>
+              <input type="range" id="g-wispcap" min="100" max="2000" step="50" value="900"></div>
+            <div class="col-span-2"><span class="lbl text-rose-300">MAX HOLD (drone guard)</span>
+              <input type="range" id="g-maxhold" data-snap-mid="0" min="0" max="15" step="0.5" value="0"
+                title="Caps how long any single note can visually hold. 0 = off."></div>
+            <div class="col-span-2"><span class="lbl text-amber-400">SCREEN SHAKE <span class="text-gray-300 font-mono" id="ro-shake">0</span></span>
+              <input type="range" id="g-screenshake" data-readout="ro-shake" data-snap-mid="0" min="0" max="2" step="0.05" value="0"
+                title="Camera punch on strong, low-register note attacks. 0 = off."></div>
+          </div>
+          <div class="text-[10px] text-gray-500 mt-2 leading-snug">
+            <span class="text-rose-300">Max Hold</span> clamps every note's effective length to
+            this many seconds — useful when a DTW-synced MIDI leaves a stray drone note that
+            reads as a stuck hold. 0 disables it and uses each note's real duration.
+          </div>
+          <div class="text-[10px] text-gray-500 mt-2 leading-snug">
+            Frame rate low? Drop <span class="text-amber-400">Render Scale</span> to 0.75,
+            then <span class="text-amber-400">Max Wisps</span>, then <span class="text-cyan-400">Glow</span> to 0.
+          </div>
+        </div>
+      </div>
+
+      <div class="sect">
+        <div class="sect-hd" data-toggle="audio-body">
+          <span class="text-sm font-semibold text-white">Audio Mixer</span>
+          <span class="text-xs text-cyan-400 font-mono toggle-icon">[+]</span>
+        </div>
+        <div id="audio-body" class="collapsed">
+          <div class="mt-2"><span class="lbl">MASTER VOLUME</span>
+            <input type="range" id="a-vol" data-snap-mid="0" min="-48" max="6" step="1" value="-12"></div>
+          <div id="mixer-list" class="mt-2 text-xs text-gray-400">Load a MIDI file.</div>
+        </div>
+      </div>
+
+      <div class="sect">
+        <div class="sect-hd" data-toggle="eq-body">
+          <span class="text-sm font-semibold text-white">Equalizer &amp; Voice Circle</span>
+          <span class="text-xs text-cyan-400 font-mono toggle-icon">[+]</span>
+        </div>
+        <div id="eq-body" class="collapsed">
+          <div class="sub-hd">Equalizer Bars</div>
+          <div class="grid grid-cols-2 gap-2 mt-1">
+            <label class="flex items-center gap-2 text-xs text-gray-300 cursor-pointer col-span-2">
+              <input type="checkbox" id="eq-on"> On &mdash; bars across the bottom of the stage
+            </label>
+            <div class="col-span-2"><span class="lbl">TRACK</span>
+              <select id="eq-track"><option value="all">All tracks</option></select></div>
+            <div><span class="lbl">BARS <span class="text-gray-300 font-mono" id="ro-eqbands">24</span></span>
+              <input type="range" id="eq-bands" data-readout="ro-eqbands" min="6" max="48" step="1" value="24"></div>
+            <div><span class="lbl">COLOR</span>
+              <input type="color" class="swatch-hex" id="eq-color" value="#00e5ff"
+                style="width:100%;height:26px;padding:1px 2px;border-radius:4px;border:1px solid #555;background:transparent;cursor:pointer;"></div>
+            <div><span class="lbl">BASE <span class="text-gray-300 font-mono" id="ro-eqbase">24</span></span>
+              <input type="range" id="eq-base" data-readout="ro-eqbase" min="0" max="127" step="1" value="24"></div>
+            <div><span class="lbl">SPREAD <span class="text-gray-300 font-mono" id="ro-eqspread">84</span></span>
+              <input type="range" id="eq-spread" data-readout="ro-eqspread" min="1" max="127" step="1" value="84"></div>
+            <div><span class="lbl text-sky-300">POSITION X <span class="text-gray-300 font-mono" id="ro-eqoffx">0</span></span>
+              <input type="range" id="eq-offx" data-readout="ro-eqoffx" data-snap-mid="0" min="-400" max="400" step="2" value="0"></div>
+            <div><span class="lbl text-sky-300">POSITION Y <span class="text-gray-300 font-mono" id="ro-eqoffy">0</span></span>
+              <input type="range" id="eq-offy" data-readout="ro-eqoffy" data-snap-mid="0" min="-400" max="400" step="2" value="0"></div>
+            <div><span class="lbl text-orange-300">DISTORT X <span class="text-gray-300 font-mono" id="ro-eqdistx">1</span></span>
+              <input type="range" id="eq-distx" data-readout="ro-eqdistx" data-snap-mid="1" min="0.2" max="3" step="0.05" value="1"
+                title="Stretches the bar graph's width"></div>
+            <div><span class="lbl text-orange-300">DISTORT Y <span class="text-gray-300 font-mono" id="ro-eqdisty">1</span></span>
+              <input type="range" id="eq-disty" data-readout="ro-eqdisty" data-snap-mid="1" min="0.2" max="3" step="0.05" value="1"
+                title="Stretches how tall the bars can reach"></div>
+            <div class="col-span-2"><span class="lbl text-emerald-400">SIZE <span class="text-gray-300 font-mono" id="ro-eqsize">1</span></span>
+              <input type="range" id="eq-size" data-readout="ro-eqsize" data-snap-mid="1" min="0.1" max="4" step="0.05" value="1"
+                title="Overall bar height multiplier, on top of Distort Y"></div>
+          </div>
+
+          <div class="sub-hd">Voice Circle</div>
+          <div class="text-[10px] text-gray-500 mb-1 leading-snug">
+            Same idea as the bars above, wrapped into a circle roughly the size of the Green Center
+            Ring — spikes pulse outward around it as one chosen voice plays.
+          </div>
+          <div class="grid grid-cols-2 gap-2 mt-1">
+            <label class="flex items-center gap-2 text-xs text-gray-300 cursor-pointer col-span-2">
+              <input type="checkbox" id="voice-on"> On &mdash; centered on the stage
+            </label>
+            <div class="col-span-2"><span class="lbl">TRACK</span>
+              <select id="voice-track"><option value="all">All tracks</option><option value="none">-- None --</option></select></div>
+            <div><span class="lbl">SPIKES <span class="text-gray-300 font-mono" id="ro-voicebands">32</span></span>
+              <input type="range" id="voice-bands" data-readout="ro-voicebands" min="8" max="64" step="1" value="32"></div>
+            <div><span class="lbl">COLOR</span>
+              <input type="color" class="swatch-hex" id="voice-color" value="#ff3366"
+                style="width:100%;height:26px;padding:1px 2px;border-radius:4px;border:1px solid #555;background:transparent;cursor:pointer;"></div>
+            <div><span class="lbl">BASE <span class="text-gray-300 font-mono" id="ro-voicebase">36</span></span>
+              <input type="range" id="voice-base" data-readout="ro-voicebase" min="0" max="127" step="1" value="36"></div>
+            <div><span class="lbl">SPREAD <span class="text-gray-300 font-mono" id="ro-voicespread">60</span></span>
+              <input type="range" id="voice-spread" data-readout="ro-voicespread" min="1" max="127" step="1" value="60"></div>
+            <div><span class="lbl text-sky-300">POSITION X <span class="text-gray-300 font-mono" id="ro-voiceoffx">0</span></span>
+              <input type="range" id="voice-offx" data-readout="ro-voiceoffx" data-snap-mid="0" min="-400" max="400" step="2" value="0"></div>
+            <div><span class="lbl text-sky-300">POSITION Y <span class="text-gray-300 font-mono" id="ro-voiceoffy">0</span></span>
+              <input type="range" id="voice-offy" data-readout="ro-voiceoffy" data-snap-mid="0" min="-400" max="400" step="2" value="0"></div>
+            <div><span class="lbl text-orange-300">DISTORT X <span class="text-gray-300 font-mono" id="ro-voicedistx">1</span></span>
+              <input type="range" id="voice-distx" data-readout="ro-voicedistx" data-snap-mid="1" min="0.2" max="3" step="0.05" value="1"
+                title="Stretches the circle into an ellipse horizontally"></div>
+            <div><span class="lbl text-orange-300">DISTORT Y <span class="text-gray-300 font-mono" id="ro-voicedisty">1</span></span>
+              <input type="range" id="voice-disty" data-readout="ro-voicedisty" data-snap-mid="1" min="0.2" max="3" step="0.05" value="1"
+                title="Stretches the circle into an ellipse vertically"></div>
+            <div class="col-span-2"><span class="lbl text-emerald-400">SIZE <span class="text-gray-300 font-mono" id="ro-voicesize">1</span></span>
+              <input type="range" id="voice-size" data-readout="ro-voicesize" data-snap-mid="1" min="0.1" max="4" step="0.05" value="1"
+                title="Overall spike-reach multiplier"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sect">
+        <div class="sect-hd" data-toggle="bass-body">
+          <span class="text-sm font-semibold text-white">Bass Visualizers</span>
+          <span class="text-xs text-cyan-400 font-mono toggle-icon">[+]</span>
+        </div>
+        <div id="bass-body" class="collapsed">
+          <div class="text-[10px] text-gray-500 mb-2 leading-snug">
+            Two shapes built for low-register weight rather than precision — pick a track (or
+            "All tracks"), and each one swells with how loud/low it's currently playing.
+          </div>
+
+          <div class="sub-hd">Bass Orbit</div>
+          <div class="grid grid-cols-2 gap-2 mt-1">
+            <label class="flex items-center gap-2 text-xs text-gray-300 cursor-pointer col-span-2">
+              <input type="checkbox" id="orbit-on"> On &mdash; a large slow ring, centered on the stage
+            </label>
+            <div class="col-span-2"><span class="lbl">TRACK</span>
+              <select id="orbit-track"><option value="all">All tracks</option></select></div>
+            <div><span class="lbl">COLOR</span>
+              <input type="color" class="swatch-hex" id="orbit-color" value="#aa3300"
+                style="width:100%;height:26px;padding:1px 2px;border-radius:4px;border:1px solid #555;background:transparent;cursor:pointer;"></div>
+            <div></div>
+            <div><span class="lbl">BASE <span class="text-gray-300 font-mono" id="ro-orbitbase">21</span></span>
+              <input type="range" id="orbit-base" data-readout="ro-orbitbase" min="0" max="127" step="1" value="21"></div>
+            <div><span class="lbl">SPREAD <span class="text-gray-300 font-mono" id="ro-orbitspread">33</span></span>
+              <input type="range" id="orbit-spread" data-readout="ro-orbitspread" min="1" max="127" step="1" value="33"></div>
+            <div><span class="lbl text-sky-300">POSITION X <span class="text-gray-300 font-mono" id="ro-orbitoffx">0</span></span>
+              <input type="range" id="orbit-offx" data-readout="ro-orbitoffx" data-snap-mid="0" min="-400" max="400" step="2" value="0"></div>
+            <div><span class="lbl text-sky-300">POSITION Y <span class="text-gray-300 font-mono" id="ro-orbitoffy">0</span></span>
+              <input type="range" id="orbit-offy" data-readout="ro-orbitoffy" data-snap-mid="0" min="-400" max="400" step="2" value="0"></div>
+            <div><span class="lbl text-orange-300">DISTORT X <span class="text-gray-300 font-mono" id="ro-orbitdistx">1</span></span>
+              <input type="range" id="orbit-distx" data-readout="ro-orbitdistx" data-snap-mid="1" min="0.2" max="3" step="0.05" value="1"
+                title="Stretches the ring into an ellipse horizontally"></div>
+            <div><span class="lbl text-orange-300">DISTORT Y <span class="text-gray-300 font-mono" id="ro-orbitdisty">1</span></span>
+              <input type="range" id="orbit-disty" data-readout="ro-orbitdisty" data-snap-mid="1" min="0.2" max="3" step="0.05" value="1"
+                title="Stretches the ring into an ellipse vertically"></div>
+            <div class="col-span-2"><span class="lbl text-emerald-400">SIZE <span class="text-gray-300 font-mono" id="ro-orbitsize">1</span></span>
+              <input type="range" id="orbit-size" data-readout="ro-orbitsize" data-snap-mid="1" min="0.1" max="4" step="0.05" value="1"></div>
+            <div class="col-span-2"><span class="lbl text-fuchsia-400">OPACITY <span class="text-gray-300 font-mono" id="ro-orbitopacity">1</span></span>
+              <input type="range" id="orbit-opacity" data-readout="ro-orbitopacity" data-snap-mid="1" min="0" max="1" step="0.02" value="1"></div>
+          </div>
+
+          <div class="sub-hd">Sub Waveform</div>
+          <div class="grid grid-cols-2 gap-2 mt-1">
+            <label class="flex items-center gap-2 text-xs text-gray-300 cursor-pointer col-span-2">
+              <input type="checkbox" id="subwave-on"> On &mdash; a thick undulating wave across the stage
+            </label>
+            <div class="col-span-2"><span class="lbl">TRACK</span>
+              <select id="subwave-track"><option value="all">All tracks</option></select></div>
+            <div><span class="lbl">COLOR</span>
+              <input type="color" class="swatch-hex" id="subwave-color" value="#ff5500"
+                style="width:100%;height:26px;padding:1px 2px;border-radius:4px;border:1px solid #555;background:transparent;cursor:pointer;"></div>
+            <div></div>
+            <div><span class="lbl">BASE <span class="text-gray-300 font-mono" id="ro-subwavebase">21</span></span>
+              <input type="range" id="subwave-base" data-readout="ro-subwavebase" min="0" max="127" step="1" value="21"></div>
+            <div><span class="lbl">SPREAD <span class="text-gray-300 font-mono" id="ro-subwavespread">33</span></span>
+              <input type="range" id="subwave-spread" data-readout="ro-subwavespread" min="1" max="127" step="1" value="33"></div>
+            <div><span class="lbl text-sky-300">POSITION X <span class="text-gray-300 font-mono" id="ro-subwaveoffx">0</span></span>
+              <input type="range" id="subwave-offx" data-readout="ro-subwaveoffx" data-snap-mid="0" min="-400" max="400" step="2" value="0"></div>
+            <div><span class="lbl text-sky-300">POSITION Y <span class="text-gray-300 font-mono" id="ro-subwaveoffy">0</span></span>
+              <input type="range" id="subwave-offy" data-readout="ro-subwaveoffy" data-snap-mid="0" min="-400" max="400" step="2" value="0"></div>
+            <div><span class="lbl text-orange-300">DISTORT X <span class="text-gray-300 font-mono" id="ro-subwavedistx">1</span></span>
+              <input type="range" id="subwave-distx" data-readout="ro-subwavedistx" data-snap-mid="1" min="0.2" max="3" step="0.05" value="1"
+                title="Stretches the wave's width"></div>
+            <div><span class="lbl text-orange-300">DISTORT Y <span class="text-gray-300 font-mono" id="ro-subwavedisty">1</span></span>
+              <input type="range" id="subwave-disty" data-readout="ro-subwavedisty" data-snap-mid="1" min="0.2" max="3" step="0.05" value="1"
+                title="Stretches the wave's amplitude"></div>
+            <div class="col-span-2"><span class="lbl text-emerald-400">SIZE <span class="text-gray-300 font-mono" id="ro-subwavesize">1</span></span>
+              <input type="range" id="subwave-size" data-readout="ro-subwavesize" data-snap-mid="1" min="0.1" max="4" step="0.05" value="1"></div>
+            <div class="col-span-2"><span class="lbl text-fuchsia-400">OPACITY <span class="text-gray-300 font-mono" id="ro-subwaveopacity">1</span></span>
+              <input type="range" id="subwave-opacity" data-readout="ro-subwaveopacity" data-snap-mid="1" min="0" max="1" step="0.02" value="1"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sect">
+        <div class="sect-hd" data-toggle="capture-body">
+          <span class="text-sm font-semibold text-white">Capture &amp; Session</span>
+          <span class="text-xs text-cyan-400 font-mono toggle-icon">[+]</span>
+        </div>
+        <div id="capture-body" class="collapsed">
+          <div class="grid grid-cols-2 gap-2 mt-2">
+            <label class="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+              <input type="checkbox" id="hide-clock"> Hide clock
+            </label>
+            <label class="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+              <input type="checkbox" id="hide-router"> Hide router
+            </label>
+          </div>
+          <div class="text-[10px] text-gray-500 mt-2 leading-snug">
+            Press <span class="text-cyan-400 font-mono">H</span> to hide every panel at once
+            (toggles back with <span class="text-cyan-400 font-mono">H</span>). Ideal for OBS.
+          </div>
+
+          <div class="mt-3">
+            <span class="lbl text-emerald-400">VISUAL OFFSET</span>
+            <input type="range" id="g-offset" data-snap-mid="0" min="-2000" max="2000" step="5" value="0">
+            <div class="flex justify-between text-[10px] font-mono text-gray-500">
+              <span>-2000ms</span><span id="offset-read">0 ms</span><span>+2000ms</span>
+            </div>
+            <div class="text-[10px] text-gray-500 mt-1 leading-snug">
+              Nudges the visuals against the transport. Negative = notes appear earlier.
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 mt-3">
+            <button id="cue-btn" class="btn-sm" disabled>Cue first note</button>
+            <label class="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+              <input type="checkbox" id="cue-flash"> Sync flash
+            </label>
+          </div>
+          <div class="text-[10px] text-gray-500 mt-2 leading-snug">
+            <span class="text-emerald-400">Cue</span> parks the transport 2s before the first note.
+            <span class="text-emerald-400">Sync flash</span> blanks the stage white for one frame
+            exactly on the first note — line that frame up with the first attack in your editor.
+          </div>
+
+          <div class="mt-3">
+            <span class="lbl text-emerald-400">PRE-ROLL COUNTDOWN <span class="text-gray-300 font-mono" id="ro-preroll">3</span>s</span>
+            <input type="range" id="g-preroll" data-readout="ro-preroll" data-snap-mid="0" min="0" max="10" step="1" value="3">
+            <div class="text-[10px] text-gray-500 mt-1 leading-snug">
+              Recording in OBS instead of using Record below? This is for you. Hitting Play waits
+              this many seconds — with a big on-screen countdown — before anything actually starts,
+              so you have time to hit record in OBS first. 0 disables it and starts immediately.
+            </div>
+          </div>
+
+          <div class="sub-hd">Presets</div>
+          <div class="grid grid-cols-2 gap-2 mt-2">
+            <button class="btn-sm" id="p-export">Export</button>
+            <button class="btn-sm" id="p-import">Import</button>
+            <button class="btn-sm" id="p-reset">Reset</button>
+            <button class="btn-sm btn-rec" id="p-record">● Record</button>
+          </div>
+          <input type="file" id="p-file" accept=".json" class="collapsed">
+          <div id="rec-status" class="text-[10px] text-gray-500 mt-2 font-mono"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="clock-panel" style="max-width:190px;">
+    <div class="text-[10px] text-gray-400 tracking-widest">CLOCK</div>
+    <div id="time-display" class="text-2xl font-mono text-cyan-400 font-light">00:00.00</div>
+    <div id="fps" class="text-[10px] font-mono text-gray-600 mt-1">—</div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+/* ============================================================
+   GEOMETRY HELPERS
+   ============================================================ */
+const TAU = Math.PI * 2;
+
+function polyPoint(cx, cy, radius, sides, progress, rotation = -Math.PI / 2) {
+  const s = ((progress % 1) + 1) % 1;
+  const seg = s * sides, i = Math.floor(seg), t = seg - i;
+  const a1 = rotation + (i * TAU) / sides;
+  const a2 = rotation + ((i + 1) * TAU) / sides;
+  const x1 = cx + radius * Math.cos(a1), y1 = cy + radius * Math.sin(a1);
+  const x2 = cx + radius * Math.cos(a2), y2 = cy + radius * Math.sin(a2);
+  return { x: x1 + (x2 - x1) * t, y: y1 + (y2 - y1) * t, angle: Math.atan2(y2 - y1, x2 - x1) };
+}
+
+/* Parametric curve -> {x,y,angle}. Give it any u => {x,y} and it works out
+   the tangent heading by central difference, so 'bar' glyphs lie along the
+   curve instead of all pointing the same way. Used by every smooth shape. */
+function param(fn, t) {
+  const e = 1e-4;
+  const p = fn(t), a = fn(t - e), b = fn(t + e);
+  return { x: p.x, y: p.y, angle: Math.atan2(b.y - a.y, b.x - a.x) };
+}
+
+/* Shared by every shape whose second lane is a "Mirrored" copy of its
+   Main lane. cfg.shapes[id].mirrorMode picks how: 'opp' places it at the
+   phase-shifted point on the same curve, 'lr' flips it across the stage's
+   vertical center, 'radial' reflects it through the stage center. This is
+   a property of the lane's own geometry (computed once here, same as any
+   other place()) — not a runtime duplication step — so it's still its own
+   fully independent, freely routable/colorable lane. */
+function mirroredLane(shapeId, t, li, g, baseFn) {
+  if (li === 0) return baseFn(t);
+  const sc = cfg.shapes[shapeId];
+  const mode = (sc && sc.mirrorMode) || 'opp';
+  if (mode === 'opp') return baseFn(((t + 0.5) % 1 + 1) % 1);   // wrapped, safe even for open paths
+  const b = baseFn(t);
+  if (mode === 'lr') return { x: g.W - b.x, y: b.y, angle: b.angle != null ? Math.PI - b.angle : undefined };
+  return { x: 2 * g.CX - b.x, y: 2 * g.CY - b.y, angle: b.angle != null ? b.angle + Math.PI : undefined };
+}
+
+/* ============================================================
+   SHAPE REGISTRY
+   Each shape is pure data + a place() function mapping a
+   normalized pitch (0..1) and lane index to {x, y, angle}.
+   Adding a new geometry = adding one object here. The control
+   panel, routing, mirroring and rendering all derive from this.
+   ============================================================ */
+const SHAPES = [
+  {
+    id: 'diag', label: 'Yellow Diagonals', glow: '#ffff00', ink: '#ffffff',
+    glyph: 'bar', half: { len: 10, thick: 3 },
+    // Already 4 independent corners — no runtime mirror needed on top of that.
+    lanes: [{ id: 'tr', label: 'Top-Right' }, { id: 'br', label: 'Bottom-Right' },
+            { id: 'bl', label: 'Bottom-Left' }, { id: 'tl', label: 'Top-Left' }],
+    mirrors: ['none'],
+    place(t, li, g) {
+      const c = [{ x: g.W, y: 0 }, { x: g.W, y: g.H }, { x: 0, y: g.H }, { x: 0, y: 0 }][li];
+      return { x: g.CX + (c.x - g.CX) * t, y: g.CY + (c.y - g.CY) * t,
+               angle: Math.atan2(c.y - g.CY, c.x - g.CX) };
+    }
+  },
+  {
+    closed: true, id: 'pent', label: 'Cyan Pentagon', glow: '#00ffff', ink: '#e0ffff',
+    glyph: 'bar', half: { len: 8, thick: 3 },
+    // "Mirrored" is a real lane — its own track and color, defaulting to
+    // match Main (same instrument/color) but freely swappable to something
+    // else entirely.
+    lanes: [{ id: 'main', label: 'Main' }, { id: 'mirror', label: 'Mirrored' }],
+    mirrors: ['none'],
+    place(t, li, g) {
+      return mirroredLane('pent', t, li, g, tt => polyPoint(g.CX, g.CY, g.core, 5, tt));
+    }
+  },
+  {
+    closed: true, id: 'ring', label: 'Green Center Ring', glow: '#00ffaa', ink: '#ffffff',
+    glyph: 'dot', half: { len: 6, thick: 6 },
+    lanes: [{ id: 'main', label: 'Main' }, { id: 'mirror', label: 'Mirrored' }],
+    mirrors: ['none'],
+    place(t, li, g) {
+      return mirroredLane('ring', t, li, g, tt => {
+        const a = tt * TAU - Math.PI / 2, r = g.core * 0.5;
+        return { x: g.CX + r * Math.cos(a), y: g.CY + r * Math.sin(a), angle: a + Math.PI / 2 };
+      });
+    }
+  },
+  {
+    id: 'ladder', label: 'Light Blue Ladders', glow: '#88ccff', ink: '#ffffff',
+    glyph: 'rung', half: { len: 70, thick: 6 },
+    lanes: [{ id: 'main', label: 'Left' }, { id: 'mirror', label: 'Right' }],
+    mirrors: ['none'],
+    place(t, li, g) {
+      return mirroredLane('ladder', t, li, g, tt => {
+        const rung = Math.floor(tt * 39);
+        return { x: 100, y: (rung / 40) * g.H, angle: 0 };
+      });
+    }
+  },
+  {
+    closed: true, id: 'diam', label: 'Magenta Diamond', glow: '#ff00ff', ink: '#ffccff',
+    glyph: 'bar', half: { len: 8, thick: 3 },
+    lanes: [{ id: 'main', label: 'Main' }, { id: 'mirror', label: 'Mirrored' }],
+    mirrors: ['none'],
+    place(t, li, g) {
+      return mirroredLane('diam', t, li, g, tt => polyPoint(g.CX, g.CY, g.core * 1.6, 4, tt));
+    }
+  },
+  {
+    id: 'parc', label: 'Purple Arcs', glow: '#aa00ff', ink: '#e6ccff',
+    glyph: 'bar', half: { len: 8, thick: 3 },
+    // Already 2 independent arcs (their own track/color each) — no runtime
+    // mirror needed on top of that.
+    lanes: [{ id: 'l', label: 'Left Arc' }, { id: 'r', label: 'Right Arc' }],
+    mirrors: ['none'],
+    place(t, li, g) {
+      const R = g.H * 0.45;
+      const a = li === 0 ? (-Math.PI / 2 + t * Math.PI) : (Math.PI / 2 + t * Math.PI);
+      const ox = li === 0 ? 0 : g.W;
+      return { x: ox + R * Math.cos(a), y: g.CY + R * Math.sin(a), angle: a + Math.PI / 2 };
+    }
+  },
+  {
+    id: 'barc', label: 'Blue Top Arc', glow: '#0066ff', ink: '#b3d1ff',
+    glyph: 'bar', half: { len: 8, thick: 3 },
+    lanes: [{ id: 'main', label: 'Main' }, { id: 'mirror', label: 'Mirrored' }],
+    mirrors: ['none'],
+    place(t, li, g) {
+      return mirroredLane('barc', t, li, g, tt => {
+        const R = g.W * 0.35, a = tt * Math.PI;
+        return { x: g.CX + R * Math.cos(a), y: R * Math.sin(a), angle: a + Math.PI / 2 };
+      });
+    }
+  },
+
+  /* ---- NEW CURVES ---------------------------------------------------
+     The numbered properties (A, B, phase, turns, cusps...) are the knobs.
+     Change them and both the note path and the blueprint follow, because
+     drawBlueprint() traces these same place() functions.
+     ------------------------------------------------------------------- */
+  {
+    closed: true, id: 'liss', label: 'Amber Lissajous', glow: '#ffb000', ink: '#ffe6b3',
+    glyph: 'bar', half: { len: 8, thick: 3 },
+    lanes: [{ id: 'main', label: 'Main' }, { id: 'mirror', label: 'Mirrored' }],
+    mirrors: ['none'],
+    A: 3, B: 2, phase: Math.PI / 2,      // frequency ratio + phase offset
+    fill: 0.38,                          // fraction of the stage it spans
+    place(t, li, g) {
+      const A = this.A, B = this.B, ph = this.phase;
+      const rx = g.W * this.fill, ry = g.H * this.fill;
+      return mirroredLane('liss', t, li, g, tt => param(u => ({
+        x: g.CX + rx * Math.sin(A * u * TAU + ph),
+        y: g.CY + ry * Math.sin(B * u * TAU)
+      }), tt));
+    }
+  },
+  {
+    id: 'spiral', label: 'Golden Fibonacci Spiral', glow: '#ffaa00', ink: '#ffe0b3',
+    glyph: 'dot', half: { len: 6, thick: 4 },
+    // Already 2 independent windings (their own track/color each) — no
+    // runtime mirror needed on top of that.
+    lanes: [{ id: 'in', label: 'Outward' }, { id: 'out', label: 'Inward' }],
+    mirrors: ['none'],
+    // Logarithmic spiral tuned so the radius multiplies by phi (1.618) every
+    // quarter turn — the continuous curve a Fibonacci square-spiral approximates.
+    turns: 3, r0: 6, fill: 0.45,
+    place(t, li, g) {
+      const turns = this.turns, r0 = this.r0;
+      const rMax = Math.min(g.W, g.H) * this.fill;
+      const dir = li === 1 ? -1 : 1;     // lane 2 winds the other way
+      const b = 0.3063489957;            // ln(phi) / (pi/2)
+      return param(u => {
+        const th = u * turns * TAU;
+        const growth = Math.exp(b * th) - 1;
+        const growthMax = Math.exp(b * turns * TAU) - 1;
+        const r = r0 + (rMax - r0) * (growth / growthMax);
+        return { x: g.CX + r * Math.cos(dir * th - Math.PI / 2),
+                 y: g.CY + r * Math.sin(dir * th - Math.PI / 2) };
+      }, t);
+    }
+  },
+  {
+    closed: true, id: 'hypo', label: 'Rose Hypocycloid', glow: '#ff0055', ink: '#ffccd9',
+    glyph: 'bar', half: { len: 8, thick: 3 },
+    lanes: [{ id: 'main', label: 'Main' }, { id: 'mirror', label: 'Mirrored' }],
+    mirrors: ['none'],
+    cusps: 5, scale: 1.9,                // 3 = deltoid, 4 = astroid, 5+ = stars
+    place(t, li, g) {
+      const k = this.cusps, R = g.core * this.scale, r = R / k;
+      return mirroredLane('hypo', t, li, g, tt => param(u => {
+        const th = u * TAU, m = (R - r) / r;
+        return { x: g.CX + (R - r) * Math.cos(th) + r * Math.cos(m * th),
+                 y: g.CY + (R - r) * Math.sin(th) - r * Math.sin(m * th) };
+      }, tt));
+    }
+  },
+  {
+    id: 'stairSpiral', label: 'Spiral Staircase', glow: '#cddcff', ink: '#ffffff',
+    glyph: 'dot', half: { len: 8, thick: 6 },
+    // Four fully independent lanes — Left/Right x Descending/Ascending —
+    // each with its own track and color. Left and Right no longer come
+    // from mirroring one another, and each side keeps its own direction
+    // control instead of sharing one.
+    lanes: [{ id: 'ld', label: 'Left ↓ (Descending)' }, { id: 'lu', label: 'Left ↑ (Ascending)' },
+            { id: 'rd', label: 'Right ↓ (Descending)' }, { id: 'ru', label: 'Right ↑ (Ascending)' }],
+    mirrors: ['none'],
+    fill: 0.19, radius: 70, turns: 4,   // baseX as a fraction of stage width, so it moves inward
+                                         // toward center without touching the ladder or red lines
+    place(t, li, g) {
+      const baseX = g.W * this.fill;
+      const isRight = li >= 2, reverse = (li === 1 || li === 3);
+      return param(tt => {
+        const u = reverse ? 1 - tt : tt;
+        const th = u * this.turns * TAU;
+        const x = baseX + this.radius * Math.sin(th);
+        return { x: isRight ? g.W - x : x, y: u * g.H };
+      }, t);
+    }
+  },
+  {
+    id: 'sine', label: 'Sine Wave', glow: '#a8ff00', ink: '#e8ffcc',
+    glyph: 'dot', half: { len: 6, thick: 5 },
+    // Already 2 independent voices (their own track/color each), a half-cycle
+    // apart — no runtime mirror needed on top of that.
+    lanes: [{ id: 'a', label: 'Voice A' }, { id: 'b', label: 'Voice B' }],
+    mirrors: ['none'],
+    ampFrac: 0.18, cycles: 3,   // amplitude as a fraction of stage height; full cycles across the width
+    place(t, li, g) {
+      const A = g.H * this.ampFrac, C = this.cycles;
+      const phase = li === 1 ? Math.PI : 0;   // Voice B rides a half-cycle out of phase from Voice A
+      const th = t * C * TAU + phase;
+      return { x: t * g.W, y: g.CY + A * Math.sin(th),
+               angle: Math.atan2(A * C * TAU * Math.cos(th), g.W) };
+    }
+  },
+  {
+    closed: true, id: 'heart', label: 'Red Heart', glow: '#ff3366', ink: '#ffccdd',
+    glyph: 'bar', half: { len: 8, thick: 3 },
+    lanes: [{ id: 'main', label: 'Main' }, { id: 'mirror', label: 'Mirrored' }],
+    mirrors: ['none'],
+    scale: 1.3,   // classic parametric heart curve, scaled and centered on the stage
+    place(t, li, g) {
+      const s = (g.core * this.scale) / 17;
+      return mirroredLane('heart', t, li, g, tt => param(u => {
+        const a = u * TAU;
+        const hx = 16 * Math.pow(Math.sin(a), 3);
+        const hy = 13 * Math.cos(a) - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - Math.cos(4 * a);
+        return { x: g.CX + hx * s, y: g.CY - hy * s };
+      }, tt));
+    }
+  },
+  {
+    closed: true, id: 'rose', label: 'Rose Curve', glow: '#ff8a00', ink: '#ffe0b3',
+    glyph: 'bar', half: { len: 7, thick: 3 },
+    // Classic mathematical rose: r = cos(k*theta). k is the petal count —
+    // change it in code and both the note path and the blueprint follow.
+    lanes: [{ id: 'main', label: 'Main' }, { id: 'mirror', label: 'Mirrored' }],
+    laneColors: ['#ff8a00', '#ffcc00'],
+    usesMirrorMode: true,
+    mirrors: ['none'],
+    k: 5, fill: 0.42,
+    place(t, li, g) {
+      const R = g.core * this.fill;
+      return mirroredLane('rose', t, li, g, tt => {
+        const th = tt * TAU;
+        const r = R * Math.cos(this.k * th);
+        return { x: g.CX + r * Math.cos(th), y: g.CY + r * Math.sin(th) };
+      });
+    }
+  },
+  {
+    id: 'bolt', label: 'Lightning Bolt', glow: '#fff34d', ink: '#ffffff',
+    glyph: 'bar', half: { len: 9, thick: 5 },
+    // Every other shape in the roster is built from sin/cos, which is
+    // smooth and radially symmetric by construction — this is the first
+    // one that isn't. It's linear interpolation between a fixed set of
+    // zigzag control points, so the path is made of genuine straight
+    // segments meeting at sharp corners, not a curve. The angle is
+    // computed analytically per-segment (not via param()'s finite-
+    // difference tangent), which matters here specifically — averaging
+    // the tangent across a sharp corner would smooth the very thing
+    // that's supposed to look sharp.
+    lanes: [{ id: 'main', label: 'Main' }, { id: 'mirror', label: 'Mirrored' }],
+    laneColors: ['#fff34d', '#7dfcff'],
+    usesMirrorMode: true,
+    mirrors: ['none'],
+    fill: 0.16,   // horizontal zigzag amplitude, as a fraction of stage width
+    points: [0.15, -0.55, 0.35, -0.85, 0.55, -0.35, 0.75, -0.1, 0.4],
+    place(t, li, g) {
+      const pts = this.points, amp = g.W * this.fill;
+      const baseFn = (uu) => {
+        const n = pts.length - 1;
+        const seg = Math.min(n - 0.0001, Math.max(0, uu * n));
+        const i = Math.floor(seg), frac = seg - i;
+        const x0 = pts[i], x1 = pts[i + 1];
+        const x = g.CX + (x0 + (x1 - x0) * frac) * amp;
+        const y = uu * g.H;
+        const dx = (x1 - x0) * amp, dy = g.H / n;
+        return { x, y, angle: Math.atan2(dy, dx) };
+      };
+      return mirroredLane('bolt', t, li, g, baseFn);
+    }
+  },
+  {
+    id: 'dna', label: 'DNA Double Helix', glow: '#7c4dff', ink: '#e3d9ff',
+    glyph: 'dot', half: { len: 7, thick: 7 },
+    // Two separate double-helices — Left and Right — mirrored around
+    // center with space between them, same idea as the Spiral Staircase's
+    // Left/Right columns. Each side crosses its own two strands (A and B,
+    // a half-turn out of phase) so they visibly wind around each other,
+    // and each strand keeps its own Ascending/Descending too — 8 fully
+    // independent lanes: side x strand x direction, each its own
+    // instrument/color. Right is Left run through the same MIRROR MODE
+    // dropdown every other "Mirrored" shape uses (defaults to Left-Right,
+    // which is exactly the split above).
+    lanes: [
+      { id: 'lad', label: 'Left Strand A ↓ (Descending)' }, { id: 'lau', label: 'Left Strand A ↑ (Ascending)' },
+      { id: 'lbd', label: 'Left Strand B ↓ (Descending)' }, { id: 'lbu', label: 'Left Strand B ↑ (Ascending)' },
+      { id: 'rad', label: 'Right Strand A ↓ (Descending)' }, { id: 'rau', label: 'Right Strand A ↑ (Ascending)' },
+      { id: 'rbd', label: 'Right Strand B ↓ (Descending)' }, { id: 'rbu', label: 'Right Strand B ↑ (Ascending)' }
+    ],
+    laneColors: ['#7c4dff', '#7c4dff', '#ff4dc4', '#ff4dc4', '#7c4dff', '#7c4dff', '#ff4dc4', '#ff4dc4'],
+    laneGroups: [{ label: 'Left', count: 4 }, { label: 'Right', count: 4 }],
+    usesMirrorMode: true,
+    mirrors: ['none'],
+    fill: 0.19, radius: 55, turns: 5,     // same fill fraction as the staircase, so Left/Right land in the same place
+    twistSpeed: 1.8,                      // radians/second — the helix visibly turns as the song plays, not just a static crossing pattern
+    place(t, li, g) {
+      const sub = li % 4;              // 0=A-desc 1=A-asc 2=B-desc 3=B-asc, same on either side
+      const isB = sub >= 2, reverse = (sub % 2) === 1;
+      const baseX = g.W * this.fill;
+      const dcfg = cfg.shapes['dna'];
+      const helixMode = (dcfg && dcfg.helixMode) || 'classic';
+      const windDirA = (dcfg && dcfg.windDirA != null) ? dcfg.windDirA : 1;
+      const windDirB = (dcfg && dcfg.windDirB != null) ? dcfg.windDirB : 1;
+      const windDir = isB ? windDirB : windDirA;
+      // classic: the original 2-way offset (A=0, B=180deg) that makes the
+      // two strands cross. waterfall: all 4 sub-lanes (A-desc/A-asc/
+      // B-desc/B-asc) get their own 90-degree slot instead, so even when
+      // several are set to flow the same visual direction they still
+      // occupy 4 distinct angular positions instead of collapsing onto
+      // each other into a flat line.
+      const phase = helixMode === 'waterfall' ? sub * (Math.PI / 2) : (isB ? Math.PI : 0);
+      const twist = currentPlaybackTime * ((dcfg && dcfg.twistSpeed != null) ? dcfg.twistSpeed : this.twistSpeed);
+      const rawFn = uu => {
+        const u = reverse ? 1 - uu : uu;
+        // windDir flips only the winding term — a negative value spirals
+        // the opposite physical direction, which is what actually sells
+        // the 3D depth illusion; phase and twist stay as fixed/global
+        // offsets regardless of which way an individual strand winds.
+        const th = (u * this.turns * TAU) * windDir + phase + twist;
+        return { x: baseX + this.radius * Math.sin(th), y: u * g.H };
+      };
+      const side = li < 4 ? 0 : 1;     // 0 = Left (computed directly), 1 = Right (mirrored per MIRROR MODE)
+      return mirroredLane('dna', t, side, g, u => param(rawFn, u));
+    }
+  }
+];
+const SHAPE_BY_ID = Object.fromEntries(SHAPES.map(s => [s.id, s]));
+
+/* form: 0 rounded-box, 1 polygon, 2 star, 3 flower.  n = sides/points/petals */
+const NOTE_FORMS = {
+  line:     { form: 0, n: 0, kind: 'bar'    },
+  circle:   { form: 0, n: 0, kind: 'round'  },
+  ring:     { form: 0, n: 0, kind: 'round', hollow: 0.30 },
+  square:   { form: 0, n: 0, kind: 'boxy'   },
+  triangle: { form: 1, n: 3 },
+  diamond:  { form: 1, n: 4 },
+  pentagon: { form: 1, n: 5 },
+  hexagon:  { form: 1, n: 6 },
+  star:     { form: 2, n: 5 },
+  star6:    { form: 2, n: 6 },
+  flower:   { form: 3, n: 6 },
+  petal:    { form: 3, n: 4 },
+  starburst:{ form: 2, n: 8, hollow: 0.22 }
+};
+const NOTE_SHAPE_LABEL = {
+  line: 'Line / Bar', circle: 'Circle', ring: 'Ring', square: 'Square',
+  triangle: 'Triangle', diamond: 'Diamond', pentagon: 'Pentagon', hexagon: 'Hexagon',
+  star: 'Star (5)', star6: 'Star (6)', flower: 'Flower', petal: 'Petal',
+  starburst: 'Starburst'
+};
+
+
+/* Generic mirroring. Glyphs are 180deg-symmetric, so reflecting the
+   heading by (PI - angle) and negating it are equivalent. */
+function mirrorPlacement(mode, p, g) {
+  if (mode === 'lr')     return { x: g.W - p.x, y: p.y, angle: Math.PI - p.angle };
+  if (mode === 'radial') return { x: 2 * g.CX - p.x, y: 2 * g.CY - p.y, angle: p.angle + Math.PI };
+  return null;
+}
+
+/* Wraps a shape's place() with its DISTORT X/Y (stretches the path's actual
+   geometry, around the stage center) and POSITION X/Y offset. Every renderer
+   routes through this instead of calling shape.place() directly, so these
+   transforms move the note heads, taper, reverb and the blueprint trace all
+   together — nothing can drift out of sync with what's actually playing. */
+function placeAt(shape, t, li, g, sc) {
+  const p = shape.place(t, li, g);
+  const dx = (sc && sc.distX != null) ? sc.distX : 1;
+  const dy = (sc && sc.distY != null) ? sc.distY : 1;
+  if (dx !== 1 || dy !== 1) {
+    // non-uniform scaling changes the path's tangent direction, so bar-glyph
+    // notes need their angle re-derived or they'll drift crooked/flat against
+    // the now-stretched curve instead of following it
+    if (p.angle !== undefined) {
+      p.angle = Math.atan2(Math.sin(p.angle) * dy, Math.cos(p.angle) * dx);
+    }
+    p.x = g.CX + (p.x - g.CX) * dx;
+    p.y = g.CY + (p.y - g.CY) * dy;
+  }
+  const ox = (sc && sc.offX) || 0, oy = (sc && sc.offY) || 0;
+  if (ox || oy) { p.x += ox; p.y += oy; }
+  return p;
+}
+
+/* ============================================================
+   CONFIG  (single source of truth; the render loop reads this,
+   never the DOM)
+   ============================================================ */
+function defaultConfig() {
+  const c = { bp: true, trail: 0.55, len: 2, thick: 2, vel: 0.5, glow: 1, vol: -12,
+              rscale: 1, wispcap: 900, offset: 0, maxHold: 0, preroll: 3, energy: 1, screenShake: 0, audioEnergyGain: 10,
+              eqOn: false, eqTrack: 'all', eqBands: 24, eqColor: '#00e5ff', eqBase: 24, eqSpread: 84,
+              eqOffX: 0, eqOffY: 0, eqDistX: 1, eqDistY: 1, eqSize: 1,
+              voiceOn: false, voiceTrack: 'all', voiceBands: 32, voiceColor: '#ff3366', voiceBase: 36, voiceSpread: 60,
+              voiceOffX: 0, voiceOffY: 0, voiceDistX: 1, voiceDistY: 1, voiceSize: 1,
+              orbitOn: false, orbitTrack: 'all', orbitColor: '#aa3300', orbitBase: 21, orbitSpread: 33,
+              orbitOffX: 0, orbitOffY: 0, orbitDistX: 1, orbitDistY: 1, orbitSize: 1, orbitOpacity: 1,
+              subwaveOn: false, subwaveTrack: 'all', subwaveColor: '#ff5500', subwaveBase: 21, subwaveSpread: 33,
+              subwaveOffX: 0, subwaveOffY: 0, subwaveDistX: 1, subwaveDistY: 1, subwaveSize: 1, subwaveOpacity: 1,
+              shapes: {}, mutes: {} };
+  SHAPES.forEach(s => {
+    c.shapes[s.id] = {
+      track: 'none', base: 36, spread: 60,
+      mirror: s.defaultMirror || 'none',
+      glow: s.glow, ink: s.ink, lenScale: 1, thickScale: 1, offX: 0, offY: 0, distX: 1, distY: 1,
+      mirrorGlow: s.glow, mirrorColorOn: false,
+      mirrorMode: (s.id === 'ladder' || s.id === 'barc' || s.id === 'dna') ? 'lr' : 'opp',
+      twistSpeed: (s.twistSpeed != null ? s.twistSpeed : 0),
+      wispLife: 0.9,
+      revAmt: 0, revBass: true, bloomAmt: 0, fireworkAmt: 0,
+      noteShape: 'line', vibAmt: 0, vibRate: 5,
+      petalAmt: 0, petalFall: 55,
+      lanes: s.lanes.map((ln, i) => ({ on: true, track: 'shared', dir: 'forward',
+        color: (s.laneColors && s.laneColors[i]) || s.glow, ink: s.ink }))
+    };
+  });
+  // DNA-specific: not a generic per-shape concept, so set directly rather
+  // than folding "helix"/"strand" terminology into the shared shape loop.
+  if (c.shapes['dna']) {
+    c.shapes['dna'].helixMode = 'classic';
+    c.shapes['dna'].windDirA = 1;
+    c.shapes['dna'].windDirB = -1;
+  }
+  return c;
+}
+let cfg = defaultConfig();
+
+/* ============================================================
+   WEBGL2 RENDERER
+
+   Why: Canvas2D rasterises on the CPU in one thread. Every fill(),
+   every shadowBlur, every arc() is CPU work, and the GPU idles. That
+   is why a fast machine still drops frames — nothing was using it.
+
+   This layer draws EVERY glyph, glow halo and wisp as instanced
+   quads in a single draw call, shaded by a signed-distance function.
+   The geometry registry above (SHAPES / place()) is untouched; only
+   the rasteriser changed.
+   ============================================================ */
+const canvas = document.getElementById('stage');
+const gl = canvas.getContext('webgl2', {
+  alpha: false, antialias: false, depth: false, stencil: false,
+  premultipliedAlpha: true,
+  preserveDrawingBuffer: true    // needed for reliable captureStream()
+});
+if (!gl) {
+  document.body.innerHTML =
+    '<div style="color:#f43f5e;font:14px system-ui;padding:2rem">' +
+    'WebGL2 is unavailable in this browser. Enable hardware acceleration and reload.</div>';
+  throw new Error('no webgl2');
+}
+
+let W = 0, H = 0, CX = 0, CY = 0, DPR = 1;
+const geo = { W: 0, H: 0, CX: 0, CY: 0, core: 0 };
+
+/* ---------- shader plumbing ---------- */
+function sh(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+function prog(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, sh(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  return p;
+}
+
+/* ---------- instanced SDF sprite program ----------
+   One primitive covers every glyph type:
+     bar   -> half=(len,thick), round=0
+     dot   -> half=(R,R),       round=R   (a rounded box with b==r IS a circle)
+     glow  -> same, oversized, soft edge, cubic falloff
+     wisp  -> circle, soft edge, cubic falloff                              */
+const SPRITE_VS = `#version 300 es
+layout(location=0) in vec2 a_quad;      // static unit quad, divisor 0
+layout(location=1) in vec2 a_pos;       // instance: centre, px
+layout(location=2) in vec2 a_half;      // instance: half extents, px
+layout(location=3) in vec4 a_shape;     // instance: rot, round, soft, ring
+layout(location=4) in vec4 a_color;     // instance: rgba (straight alpha)
+layout(location=5) in float a_mode;     // instance: 0 solid, 1 glow falloff
+layout(location=6) in vec2 a_form;      // instance: form id, form param (sides/points/petals)
+uniform vec2 u_res;
+out vec2  v_local;
+out vec2  v_half;
+out float v_round;
+out float v_soft;
+out float v_ring;
+out vec4  v_color;
+out float v_mode;
+out vec2  v_form;
+void main() {
+  float soft = max(a_shape.z, 0.5);
+  vec2 ext   = a_half + soft + a_shape.w + 1.0;   // fit falloff AND ring
+  vec2 local = a_quad * ext;
+  float c = cos(a_shape.x), s = sin(a_shape.x);
+  vec2 world = a_pos + vec2(local.x * c - local.y * s, local.x * s + local.y * c);
+  vec2 clip  = (world / u_res) * 2.0 - 1.0;
+  gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);   // flip Y: canvas coords
+  v_local = local; v_half = a_half; v_round = a_shape.y;
+  v_soft  = soft;  v_ring = a_shape.w;
+  v_color = a_color; v_mode = a_mode; v_form = a_form;
+}`;
+
+const SPRITE_FS = `#version 300 es
+precision highp float;
+in vec2  v_local;
+in vec2  v_half;
+in float v_round;
+in float v_soft;
+in float v_ring;
+in vec4  v_color;
+in float v_mode;
+in vec2  v_form;
+out vec4 outColor;
+float sdRoundBox(vec2 p, vec2 b, float r) {
+  vec2 q = abs(p) - b + r;
+  return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
+}
+/* Polar forms. Cheap and exact enough near the boundary, which is all
+   that matters for an antialiased edge.
+     form 1 = regular polygon (n sides)
+     form 2 = star (n points)
+     form 3 = flower / petals (n petals)                                */
+float sdPolar(vec2 p, float R, float n, float form) {
+  float a = atan(p.y, p.x);
+  float r = length(p);
+  float seg = 6.28318530718 / max(n, 3.0);
+  if (form < 1.5) {
+    float aa = mod(a + seg * 0.5, seg) - seg * 0.5;
+    return r * cos(aa) - R * cos(seg * 0.5);
+  } else if (form < 2.5) {
+    float tw = abs(mod(a, seg) / seg * 2.0 - 1.0);
+    return r - R * mix(0.42, 1.0, tw);
+  }
+  return r - R * (0.55 + 0.45 * cos(n * a));
+}
+void main() {
+  float d;
+  if (v_form.x < 0.5) {
+    d = sdRoundBox(v_local, v_half, v_round);
+  } else {
+    // anisotropic polar: evaluate in un-squashed space so half.y < half.x
+    // yields a flattened form. half.x == half.y keeps the old behaviour.
+    float R = max(v_half.x, 0.001);
+    float e = clamp(v_half.y / R, 0.15, 1.0);
+    d = sdPolar(vec2(v_local.x, v_local.y / e), R, v_form.y, v_form.x) * e;
+  }
+  if (v_ring > 0.0) d = abs(d) - v_ring;      // filled shape -> outline
+  float a = 1.0 - smoothstep(-v_soft, v_soft, d);
+  if (v_mode > 0.5) a = a * a * a;            // tighter bloom falloff
+  a *= v_color.a;
+  if (a <= 0.002) discard;
+  outColor = vec4(v_color.rgb * a, a);        // premultiplied
+}`;
+
+/* ---------- fullscreen textured quad (blueprint + trail composite) ---------- */
+const TEX_VS = `#version 300 es
+layout(location=0) in vec2 a_quad;
+out vec2 v_uv;
+void main() { v_uv = a_quad * 0.5 + 0.5; gl_Position = vec4(a_quad, 0.0, 1.0); }`;
+const TEX_FS = `#version 300 es
+precision highp float;
+in vec2 v_uv; uniform sampler2D u_tex; uniform float u_flip;
+out vec4 outColor;
+void main() {
+  vec2 uv = vec2(v_uv.x, mix(v_uv.y, 1.0 - v_uv.y, u_flip));
+  outColor = texture(u_tex, uv);
+}`;
+
+/* Fade pass must NOT sample a texture — it writes to the same target it
+   would read, which is undefined behaviour (feedback loop). Solid quad. */
+const SOLID_VS = `#version 300 es
+layout(location=0) in vec2 a_quad;
+void main() { gl_Position = vec4(a_quad, 0.0, 1.0); }`;
+const SOLID_FS = `#version 300 es
+precision highp float;
+out vec4 outColor;
+void main() { outColor = vec4(1.0); }`;
+
+const spriteProg = prog(SPRITE_VS, SPRITE_FS);
+const texProg    = prog(TEX_VS, TEX_FS);
+const solidProg  = prog(SOLID_VS, SOLID_FS);
+const U_RES  = gl.getUniformLocation(spriteProg, 'u_res');
+const U_TEX  = gl.getUniformLocation(texProg, 'u_tex');
+const U_FLIP = gl.getUniformLocation(texProg, 'u_flip');
+
+/* ---------- geometry buffers ---------- */
+const QUAD = new Float32Array([-1,-1, 1,-1, -1,1, 1,1]);
+const quadBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+gl.bufferData(gl.ARRAY_BUFFER, QUAD, gl.STATIC_DRAW);
+
+const MAX_INSTANCES = 40000;
+const FLOATS_PER    = 15;                       // pos2 half2 shape4 color4 mode1 form2
+const instData = new Float32Array(MAX_INSTANCES * FLOATS_PER);
+let   instCount = 0;
+const instBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+gl.bufferData(gl.ARRAY_BUFFER, instData.byteLength, gl.DYNAMIC_DRAW);
+
+const spriteVAO = gl.createVertexArray();
+gl.bindVertexArray(spriteVAO);
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+const STRIDE = FLOATS_PER * 4;
+[[1,2,0],[2,2,8],[3,4,16],[4,4,32],[5,1,48],[6,2,52]].forEach(([loc, size, off]) => {
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, size, gl.FLOAT, false, STRIDE, off);
+  gl.vertexAttribDivisor(loc, 1);
+});
+gl.bindVertexArray(null);
+
+const texVAO = gl.createVertexArray();
+gl.bindVertexArray(texVAO);
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+gl.bindVertexArray(null);
+
+/* ---------- offscreen targets ---------- */
+function makeTarget() {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return { tex, fb };
+}
+const trailRT = makeTarget();
+const bpTex   = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, bpTex);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+/* The blueprint is static geometry. We still draw it with Canvas2D —
+   that code is expressive and runs once — then upload the result as a
+   texture. Retracing ~2500 segments per frame is gone entirely. */
+const bpCanvas = document.createElement('canvas');
+const bpCtx = bpCanvas.getContext('2d');
+let bpDirty = true, previewDirty = true;
+function invalidateBlueprint() { bpDirty = true; previewDirty = true; }
+function ensureBlueprintCache() {
+  const pw = Math.round(W * DPR), ph = Math.round(H * DPR);
+  if (!bpDirty && bpCanvas.width === pw) return;
+  bpCanvas.width = pw; bpCanvas.height = ph;
+  bpCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  bpCtx.clearRect(0, 0, W, H);
+  drawBlueprint(bpCtx);
+  gl.bindTexture(gl.TEXTURE_2D, bpTex);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bpCanvas);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  bpDirty = false;
+}
+
+/* A second, lighter cache: just the currently-selected path's own outline
+   in bold white, nothing else — no grid lines, no other paths. This is
+   what "Preview path" shows when the full Blueprint is switched off, so
+   you can see what you're editing without digging down to Stage & Trails
+   just to flip Blueprint on. */
+const previewTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, previewTex);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+const previewCanvas = document.createElement('canvas');
+const previewCtx = previewCanvas.getContext('2d');
+function ensurePreviewCache() {
+  const pw = Math.round(W * DPR), ph = Math.round(H * DPR);
+  if (!previewDirty && previewCanvas.width === pw) return;
+  previewCanvas.width = pw; previewCanvas.height = ph;
+  previewCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  previewCtx.clearRect(0, 0, W, H);
+  drawPathPreview(previewCtx);
+  gl.bindTexture(gl.TEXTURE_2D, previewTex);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, previewCanvas);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  previewDirty = false;
+}
+
+
+/* Wisp pool state lives up here because the control bindings below run
+   their read() immediately at startup and touch both of these. Declaring
+   them later put them in the temporal dead zone and threw at init. */
+
+/* ------------------------------------------------------------
+   REVERB BLOOM
+   A note leaves an expanding ring that radiates outward in every
+   direction and fades — the spatial wash of a reverb rather than
+   the directional tail of Path Reverb. Expansion eases out (fast
+   at first, then slowing) and the ring thins as it grows, which
+   is what sells it as dissipating energy rather than a moving
+   circle. Bass Weight makes low notes bloom bigger and longer.
+   ------------------------------------------------------------ */
+const blooms = [];
+let   bloomCap = 260;
+
+/* ------------------------------------------------------------
+   PETAL EMITTER
+   Independent of the comet trail and of GLOW. A finished note
+   sheds petal-shaped particles that drift, spin, and flutter:
+   each petal carries its own flutter phase, and the shape is
+   squashed on one axis by |cos(flutter)| so it appears to turn
+   edge-on as it tumbles — that oscillation is what reads as a
+   falling petal rather than a rotating blob. Gravity is a
+   per-shape control, so 0 leaves them hanging in the air.
+   The single-petal form is the flower SDF with n = 1, which
+   collapses to one lobe, so no new shader form was needed.
+   ------------------------------------------------------------ */
+const petals = [];
+let   petalCap = 600;
+
+/* ------------------------------------------------------------
+   FIREWORK BURST
+   The mirror image of the bloom/petal pair above: those trigger on
+   note END, this triggers on note ATTACK — the instant a note starts
+   sounding, a ring of sparks bursts outward radially (evenly spaced
+   around the circle, not random, so it actually reads as a burst or
+   an opening flower rather than a scatter) and decelerates fast via
+   drag rather than drifting, which is what sells "firework pop"
+   instead of "petal falling."
+   ------------------------------------------------------------ */
+const fireworks = [];
+let   fireworkCap = 500;
+
+/* ---------- instance push (the only thing draw code calls) ---------- */
+function push(x, y, hx, hy, rot, round, soft, ring, r, g, b, a, mode, form, fparam) {
+  if (instCount >= MAX_INSTANCES) return;
+  let o = instCount * FLOATS_PER;
+  instData[o]    = x;    instData[o+1]  = y;
+  instData[o+2]  = hx;   instData[o+3]  = hy;
+  instData[o+4]  = rot;  instData[o+5]  = round;
+  instData[o+6]  = soft; instData[o+7]  = ring;
+  instData[o+8]  = r;    instData[o+9]  = g; instData[o+10] = b; instData[o+11] = a;
+  instData[o+12] = mode;
+  instData[o+13] = form || 0; instData[o+14] = fparam || 0;
+  instCount++;
+}
+
+/* hex -> normalised rgb, memoised (called a few times per frame, not per note) */
+const rgbCache = new Map();
+function rgb(hex) {
+  let v = rgbCache.get(hex);
+  if (v) return v;
+  let h = String(hex).replace('#', '');
+  if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+  const n = parseInt(h, 16) || 0;
+  v = [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+  if (rgbCache.size > 64) rgbCache.clear();
+  rgbCache.set(hex, v);
+  return v;
+}
+
+function resize() {
+  const rs = (cfg && isFinite(cfg.rscale)) ? cfg.rscale : 1;
+  DPR = Math.min(window.devicePixelRatio || 1, 2) * rs;
+  W = window.innerWidth; H = window.innerHeight;
+  CX = W / 2; CY = H / 2;
+  const pw = Math.round(W * DPR), ph = Math.round(H * DPR);
+  canvas.width = pw; canvas.height = ph;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  gl.bindTexture(gl.TEXTURE_2D, trailRT.tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, pw, ph, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  geo.W = W; geo.H = H; geo.CX = CX; geo.CY = CY;
+  geo.core = Math.min(W, H) * 0.2;
+  if (typeof invalidateBlueprint === 'function') invalidateBlueprint();
+}
+window.addEventListener('resize', resize);
+resize();
+
+const BP = {
+  bg: '#08080a', black: '#1a1a24', ladder: 'rgba(136,204,255,.3)',
+  purple: 'rgba(170,0,255,.4)', red: 'rgba(255,0,50,.3)', yellow: 'rgba(255,255,0,.25)',
+  blue: 'rgba(0,100,255,.3)', magenta: 'rgba(255,0,255,.4)', cyan: 'rgba(0,255,255,.3)',
+  green: 'rgba(0,255,170,.4)',
+  amber: 'rgba(255,176,0,.22)', orange: 'rgba(255,102,0,.25)', rose: 'rgba(255,0,85,.3)',
+  silver: 'rgba(205,220,255,.28)', lime: 'rgba(168,255,0,.26)', crimson: 'rgba(255,51,102,.28)',
+  violet: 'rgba(124,77,255,.28)', pink: 'rgba(255,77,196,.28)', rosegold: 'rgba(255,138,0,.28)',
+  boltyellow: 'rgba(255,243,77,.3)'
+};
+
+function line(c, x1, y1, x2, y2, color, w = 1) {
+  c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2);
+  c.strokeStyle = color; c.lineWidth = w; c.stroke();
+}
+function poly(c, cx, cy, r, sides, color, w = 1, rot = -Math.PI / 2) {
+  c.beginPath();
+  for (let i = 0; i <= sides; i++) {
+    const a = rot + (i * TAU) / sides;
+    const x = cx + r * Math.cos(a), y = cy + r * Math.sin(a);
+    i === 0 ? c.moveTo(x, y) : c.lineTo(x, y);
+  }
+  c.strokeStyle = color; c.lineWidth = w; c.stroke();
+}
+/* Trace any shape's own place() so the scaffolding can never drift
+   out of sync with where the notes actually land. */
+function traceShape(c, sid, lane, steps, color, w = 1) {
+  const s = SHAPE_BY_ID[sid]; if (!s) return;
+  const sc = cfg.shapes[sid];
+  c.beginPath();
+  for (let i = 0; i <= steps; i++) {
+    const p = placeAt(s, i / steps, lane, geo, sc);
+    i === 0 ? c.moveTo(p.x, p.y) : c.lineTo(p.x, p.y);
+  }
+  c.strokeStyle = color; c.lineWidth = w; c.stroke();
+}
+
+/* Fades an rgba(...) guide color down, so the path picked in the Path
+   Editor tab strip can be drawn bold and bright on top of everything
+   else instead of getting lost among ten other overlapping traces. */
+function dimColor(rgba) {
+  const m = /rgba?\(([^)]+)\)/.exec(rgba);
+  if (!m) return rgba;
+  const p = m[1].split(',').map(x => x.trim());
+  const a = p.length > 3 ? parseFloat(p[3]) : 1;
+  return `rgba(${p[0]},${p[1]},${p[2]},${(a * 0.35).toFixed(3)})`;
+}
+let isolatePathMode = true;   // hide every other path's guide while one is selected
+let pathPreviewOn = true;     // show the selected path's outline even when Blueprint is off
+function traceGuide(c, sid, lane, steps, color, w = 1) {
+  const sc = cfg.shapes[sid];
+  const laneObj = sc && sc.lanes && sc.lanes[lane];
+  if (laneObj && !laneObj.on) return;   // lane turned off -> its guide is hidden too
+  if (sid === activeShapeId) {
+    traceShape(c, sid, lane, steps, 'rgba(255,255,255,.3)', w + 5);  // soft halo
+    traceShape(c, sid, lane, steps, '#ffffff', w + 1.3);              // crisp highlight
+  } else if (activeShapeId && isolatePathMode) {
+    return;   // isolate mode: every other path's guide is hidden outright
+  } else {
+    traceShape(c, sid, lane, steps, activeShapeId ? dimColor(color) : color, w);
+  }
+}
+
+function drawBlueprint(c) {
+  const sp = H * 0.1;
+  [-1.5, -0.5, 0.5, 1.5].forEach(o => line(c, 0, CY + o * sp, W, CY + o * sp, BP.black, 4));
+  line(c, W * 0.25, 0, W * 0.25, H, BP.red, 2);
+  line(c, W * 0.75, 0, W * 0.75, H, BP.red, 2);
+
+  // Every guide below is traced from the shape's own place(), the same
+  // function that positions the actual notes — so Position X/Y and
+  // Distort X/Y on any path move its guide right along with it instead
+  // of leaving a stale outline behind. A lane switched off in LANES draws
+  // no guide either. Whichever path is selected in the Path Editor tab
+  // strip draws bold and white on top of the rest.
+  traceGuide(c, 'parc', 0, 200, BP.purple, 1);
+  traceGuide(c, 'parc', 1, 200, BP.purple, 1);
+  traceGuide(c, 'barc', 0, 200, BP.blue, 1);
+  traceGuide(c, 'barc', 1, 200, BP.blue, 1);
+  traceGuide(c, 'diag', 0, 2, BP.yellow, 1);
+  traceGuide(c, 'diag', 1, 2, BP.yellow, 1);
+  traceGuide(c, 'diag', 2, 2, BP.yellow, 1);
+  traceGuide(c, 'diag', 3, 2, BP.yellow, 1);
+  traceGuide(c, 'bolt', 0, 60, BP.boltyellow, 2);
+  traceGuide(c, 'bolt', 1, 60, BP.boltyellow, 2);
+  traceGuide(c, 'diam', 0, 80, BP.magenta, 2);
+  traceGuide(c, 'diam', 1, 80, BP.magenta, 2);
+  traceGuide(c, 'pent', 0, 100, BP.cyan, 2);
+  traceGuide(c, 'pent', 1, 100, BP.cyan, 2);
+  traceGuide(c, 'ring', 0, 120, BP.green, 1);
+  traceGuide(c, 'ring', 1, 120, BP.green, 1);
+
+  // the ring's clock-face tick marks are pure decoration around it — shown
+  // whenever either of its lanes is on, following the ring's own offset
+  const ringSc = cfg.shapes['ring'];
+  const ringActive = activeShapeId === 'ring';
+  const ringOn = ringSc && (ringSc.lanes[0].on || ringSc.lanes[1].on);
+  if (ringOn && !(activeShapeId && isolatePathMode && !ringActive)) {
+    const rcx = CX + ((ringSc && ringSc.offX) || 0), rcy = CY + ((ringSc && ringSc.offY) || 0);
+    const tickCol = ringActive ? '#ffffff' : (activeShapeId ? dimColor(BP.green) : BP.green);
+    for (let i = 0; i < 60; i++) {
+      const a = (i * TAU) / 60, main = i % 12 === 0;
+      const r1 = main ? geo.core * 0.42 : geo.core * 0.47;
+      const r2 = main ? geo.core * 0.58 : geo.core * 0.53;
+      line(c, rcx + r1 * Math.cos(a), rcy + r1 * Math.sin(a), rcx + r2 * Math.cos(a), rcy + r2 * Math.sin(a), tickCol, (main ? 2 : 1) + (ringActive ? 1 : 0));
+    }
+  }
+
+  // ladder rails + rungs: Left and Right are real independent lanes now, so
+  // each side's rail only draws when that side's lane is switched on, and
+  // is derived from the ladder's own half.len so the box always matches
+  // how wide the actual rungs are drawn
+  const ladderShape = SHAPE_BY_ID['ladder'], ladderSc = cfg.shapes['ladder'];
+  const ladderActive = activeShapeId === 'ladder';
+  if (ladderShape && !(activeShapeId && isolatePathMode && !ladderActive)) {
+    const ladderCol = ladderActive ? '#ffffff' : (activeShapeId ? dimColor(BP.ladder) : BP.ladder);
+    const railW = ladderActive ? 3 : 2, rungW = ladderActive ? 2 : 1;
+    const half = ladderShape.half.len;
+    const leftOn = ladderSc.lanes[0].on, rightOn = ladderSc.lanes[1].on;
+    if (leftOn) {
+      const cxL = placeAt(ladderShape, 0, 0, geo, ladderSc).x;
+      const L0 = cxL - half, L1 = cxL + half;
+      line(c, L0, 0, L0, H, ladderCol, railW); line(c, L1, 0, L1, H, ladderCol, railW);
+      for (let i = 0; i < 40; i++) {
+        const y = i * (H / 40) + ((ladderSc.offY) || 0);
+        line(c, L0, y, L1, y, ladderCol, rungW);
+      }
+    }
+    if (rightOn) {
+      const cxR = placeAt(ladderShape, 0, 1, geo, ladderSc).x;
+      const R0 = cxR - half, R1 = cxR + half;
+      line(c, R0, 0, R0, H, ladderCol, railW); line(c, R1, 0, R1, H, ladderCol, railW);
+      for (let i = 0; i < 40; i++) {
+        const y = i * (H / 40) + ((ladderSc.offY) || 0);
+        line(c, R0, y, R1, y, ladderCol, rungW);
+      }
+    }
+  }
+
+  traceGuide(c, 'liss',   0, 480, BP.amber, 1);
+  traceGuide(c, 'liss',   1, 480, BP.amber, 1);
+  traceGuide(c, 'sine',   0, 300, BP.lime, 1);
+  traceGuide(c, 'sine',   1, 300, BP.lime, 1);
+  traceGuide(c, 'heart',  0, 300, BP.crimson, 1.5);
+  traceGuide(c, 'heart',  1, 300, BP.crimson, 1.5);
+  traceGuide(c, 'rose',   0, 400, BP.rosegold, 1.5);
+  traceGuide(c, 'rose',   1, 400, BP.rosegold, 1.5);
+  traceGuide(c, 'spiral', 0, 600, BP.orange, 1);
+  traceGuide(c, 'spiral', 1, 600, BP.orange, 1);
+  traceGuide(c, 'hypo',   0, 480, BP.rose, 1.5);
+  traceGuide(c, 'hypo',   1, 480, BP.rose, 1.5);
+
+  // spiral staircase: 4 independent lanes (each computes its own side
+  // directly); Descending/Ascending trace the same physical curve, so one
+  // trace per side is enough
+  traceGuide(c, 'stairSpiral', 0, 360, BP.silver, 1);
+  traceGuide(c, 'stairSpiral', 2, 360, BP.silver, 1);
+  traceGuide(c, 'dna', 0, 400, BP.violet, 1.5);
+  traceGuide(c, 'dna', 2, 400, BP.pink, 1.5);
+  traceGuide(c, 'dna', 4, 400, BP.violet, 1.5);
+  traceGuide(c, 'dna', 6, 400, BP.pink, 1.5);
+}
+
+/* Draws only the currently-selected path's own outline in bold white —
+   no grid lines, no other paths — for the "Preview path" toggle, which
+   works even when the main Blueprint is switched off. Reuses the same
+   ladder/ring special cases as drawBlueprint() since those two aren't
+   simple traced curves. */
+function drawPathPreview(c) {
+  if (!activeShapeId) return;
+  const s = SHAPE_BY_ID[activeShapeId];
+  const sc = cfg.shapes[activeShapeId];
+  if (!s || !sc) return;
+
+  if (activeShapeId === 'ladder') {
+    const half = s.half.len;
+    if (sc.lanes[0].on) {
+      const cxL = placeAt(s, 0, 0, geo, sc).x, L0 = cxL - half, L1 = cxL + half;
+      line(c, L0, 0, L0, H, '#ffffff', 3); line(c, L1, 0, L1, H, '#ffffff', 3);
+      for (let i = 0; i < 40; i++) { const y = i * (H / 40) + ((sc.offY) || 0); line(c, L0, y, L1, y, '#ffffff', 2); }
+    }
+    if (sc.lanes[1].on) {
+      const cxR = placeAt(s, 0, 1, geo, sc).x, R0 = cxR - half, R1 = cxR + half;
+      line(c, R0, 0, R0, H, '#ffffff', 3); line(c, R1, 0, R1, H, '#ffffff', 3);
+      for (let i = 0; i < 40; i++) { const y = i * (H / 40) + ((sc.offY) || 0); line(c, R0, y, R1, y, '#ffffff', 2); }
+    }
+    return;
+  }
+  if (activeShapeId === 'ring' && (sc.lanes[0].on || sc.lanes[1].on)) {
+    const rcx = CX + ((sc.offX) || 0), rcy = CY + ((sc.offY) || 0);
+    for (let i = 0; i < 60; i++) {
+      const a = (i * TAU) / 60, main = i % 12 === 0;
+      const r1 = main ? geo.core * 0.42 : geo.core * 0.47;
+      const r2 = main ? geo.core * 0.58 : geo.core * 0.53;
+      line(c, rcx + r1 * Math.cos(a), rcy + r1 * Math.sin(a), rcx + r2 * Math.cos(a), rcy + r2 * Math.sin(a), '#ffffff', main ? 3 : 2);
+    }
+  }
+  for (let li = 0; li < s.lanes.length; li++) {
+    if (!sc.lanes[li].on) continue;
+    traceShape(c, activeShapeId, li, 400, 'rgba(255,255,255,.3)', 6.3);
+    traceShape(c, activeShapeId, li, 400, '#ffffff', 2.3);
+  }
+}
+
+/* ============================================================
+   MIDI STATE
+   Tracks are normalized once at load. Nothing allocates per frame.
+   ============================================================ */
+let parsedMidi = null;
+let normTracks = [];      // [{time,duration,pitch,name,velocity}] sorted by time
+let trackMeta = [];        // {index,name,count}
+let songDuration = 0;
+
+function normalizeTracks(midi) {
+  return midi.tracks.map(tr => {
+    const ns = tr.notes
+      .map(n => ({ time: n.time, duration: n.duration, pitch: n.midi, name: n.name, velocity: n.velocity }))
+      .sort((a, b) => a.time - b.time);
+    // Melodic direction, computed per note GROUP in time on this track —
+    // a "group" is every note sharing the exact same onset (a chord).
+    // Comparing chord members against EACH OTHER is meaningless (their
+    // relative order after sorting is an accident of array order, not
+    // melodic motion) — that was the original bug: two notes of one
+    // chord could end up with opposite steps, sending their taper trails
+    // in opposite directions for no musical reason. It's not enough to
+    // compare each member individually against the previous group either
+    // — a chord commonly spans pitches both above AND below wherever the
+    // line just was, which would still split the SAME chord across both
+    // directions. So every note in a group shares ONE step instead,
+    // computed once from the group's representative (highest) pitch
+    // against the previous group's — the whole chord moves together.
+    let prevPitch = null;
+    let i = 0;
+    while (i < ns.length) {
+      const groupTime = ns[i].time;
+      let j = i, maxPitch = ns[i].pitch;
+      while (j < ns.length && ns[j].time === groupTime) {
+        if (ns[j].pitch > maxPitch) maxPitch = ns[j].pitch;
+        j++;
+      }
+      let groupStep;
+      if (prevPitch === null || maxPitch === prevPitch) groupStep = 0;
+      else groupStep = maxPitch > prevPitch ? 1 : -1;
+      for (let k = i; k < j; k++) ns[k].step = groupStep;
+      prevPitch = maxPitch;
+      i = j;
+    }
+    return ns;
+  });
+}
+
+/* ------------------------------------------------------------
+   NOTE SCANNER
+   Replaces the old "scan every note every frame" approach.
+   Keeps a forward cursor plus a live active-set, so per-frame
+   cost is O(sounding notes), not O(all notes). Handles backward
+   seeks by binary-searching a safe restart index.
+   ------------------------------------------------------------ */
+const PAD = 0.1;   // extra tail beyond note duration, as before
+
+/* A note's "effective" duration for rendering/holding purposes. Normally
+   just its real duration, but MAX HOLD (drone guard) clamps it — useful
+   when a DTW-synced MIDI resolves an alignment gap by stretching one
+   note into a long drone instead of inserting a rest. */
+function effDur(n) {
+  return (cfg.maxHold > 0) ? Math.min(n.duration, cfg.maxHold) : n.duration;
+}
+
+function makeScanner(notes) {
+  let maxDur = 0;
+  for (let i = 0; i < notes.length; i++) if (notes[i].duration > maxDur) maxDur = notes[i].duration;
+  // `wisped`/`started` hold note OBJECT references, not string keys.
+  // Membership is O(1) with zero allocation, and entries are pruned in
+  // the compaction pass below, so neither set can ever outgrow the
+  // active note count.
+  return { notes, maxDur, cursor: 0, active: [], wisped: new Set(), started: new Set(), lastT: -Infinity };
+}
+function scan(s, t) {
+  if (t < s.lastT) {                      // seek backwards -> rebuild
+    s.active.length = 0;
+    s.wisped.clear();
+    s.started.clear();
+    const target = t - s.maxDur - PAD;
+    let lo = 0, hi = s.notes.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (s.notes[m].time < target) lo = m + 1; else hi = m; }
+    s.cursor = lo;
+  }
+  s.lastT = t;
+  while (s.cursor < s.notes.length && s.notes[s.cursor].time <= t) s.active.push(s.notes[s.cursor++]);
+  let w = 0;
+  for (let r = 0; r < s.active.length; r++) {
+    const n = s.active[r];
+    if (t - n.time <= effDur(n) + PAD) s.active[w++] = n;
+    else { s.wisped.delete(n); s.started.delete(n); }   // note fully gone -> forget it
+  }
+  s.active.length = w;
+  return s.active;
+}
+
+const scanners = new Map();   // "shapeId:laneIdx" -> {scanner, srcIndex}
+function resolveTrack(sid, li) {
+  const sc = cfg.shapes[sid];
+  const v = sc.lanes[li].track === 'shared' ? sc.track : sc.lanes[li].track;
+  if (v === 'none' || v === undefined || v === null) return -1;
+  const i = parseInt(v, 10);
+  return Number.isInteger(i) && normTracks[i] ? i : -1;
+}
+/* Returns the scanner itself: .active is the note list, .wisped the
+   already-emitted set. Callers avoid building any string keys. */
+function getScanner(sid, li, t) {
+  const key = sid + ':' + li;
+  const src = resolveTrack(sid, li);
+  let e = scanners.get(key);
+  if (!e || e.src !== src) {
+    e = { src, scanner: makeScanner(src >= 0 ? normTracks[src] : []) };
+    scanners.set(key, e);
+  }
+  scan(e.scanner, t);
+  return e.scanner;
+}
+function getActive(sid, li, t) { return getScanner(sid, li, t).active; }
+function resetScanners() { scanners.clear(); }
+
+/* Same scanner cache, keyed directly by track index instead of a shape/
+   lane pair — used by the Equalizer and Voice Circle, which read a
+   track's notes straight, with no shape/place() geometry involved. */
+function getTrackActive(trackIdx, t) {
+  const key = 'trk:' + trackIdx;
+  let e = scanners.get(key);
+  if (!e || e.src !== trackIdx) {
+    e = { src: trackIdx, scanner: makeScanner(normTracks[trackIdx] ? normTracks[trackIdx] : []) };
+    scanners.set(key, e);
+  }
+  scan(e.scanner, t);
+  return e.scanner.active;
+}
+
+/* ============================================================
+   AUDIO  (Transport-driven, so pause + seek actually work)
+   ============================================================ */
+let parts = [];
+let masterVol = null;
+let trackGains = [];
+let audioReady = false;
+
+async function buildAudio() {
+  await Tone.start();
+  disposeAudio();
+  masterVol = new Tone.Volume(cfg.vol).toDestination();
+  parsedMidi.tracks.forEach((tr, i) => {
+    const gain = new Tone.Gain(cfg.mutes[i] ? 0 : 1).connect(masterVol);
+    const synth = new Tone.PolySynth(Tone.Synth, { maxPolyphony: 32 }).connect(gain);
+    trackGains[i] = gain;
+    if (!tr.notes.length) return;
+    const part = new Tone.Part((time, ev) => {
+      synth.triggerAttackRelease(ev.name, effDur(ev), time, ev.velocity);
+    }, tr.notes.map(n => ({ time: n.time, name: n.name, duration: n.duration, velocity: n.velocity })));
+    part.start(0);
+    parts.push({ part, synth, gain });
+  });
+  audioReady = true;
+}
+function disposeAudio() {
+  parts.forEach(p => { try { p.part.dispose(); p.synth.dispose(); p.gain.dispose(); } catch (e) {} });
+  parts = []; trackGains = [];
+  if (masterVol) { try { masterVol.dispose(); } catch (e) {} masterVol = null; }
+  Tone.Transport.cancel();
+  audioReady = false;
+}
+
+const playBtn = document.getElementById('play-btn');
+const stopBtn = document.getElementById('stop-btn');
+const seekEl = document.getElementById('seek');
+const countdownEl = document.getElementById('countdown-overlay');
+
+let countdownTimer = null;
+function cancelCountdown() {
+  if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+  countdownEl.textContent = '';
+  playBtn.disabled = false;
+}
+async function beginPlayback() {
+  if (!audioReady) await buildAudio();
+  Tone.Transport.start();
+  playBtn.textContent = 'Pause';
+}
+function startWithPreroll() {
+  const preroll = Math.round(cfg.preroll || 0);
+  if (preroll <= 0) { beginPlayback(); return; }
+  let remaining = preroll;
+  playBtn.disabled = true;
+  playBtn.textContent = `Starting… ${remaining}`;
+  countdownEl.textContent = String(remaining);
+  countdownTimer = setInterval(() => {
+    remaining--;
+    if (remaining <= 0) {
+      clearInterval(countdownTimer); countdownTimer = null;
+      countdownEl.textContent = '';
+      playBtn.disabled = false;
+      beginPlayback();
+    } else {
+      playBtn.textContent = `Starting… ${remaining}`;
+      countdownEl.textContent = String(remaining);
+    }
+  }, 1000);
+}
+
+async function togglePlay() {
+  if (!parsedMidi) return;
+  if (countdownTimer) { cancelCountdown(); playBtn.textContent = 'Play'; return; }  // cancel a pending pre-roll
+  if (Tone.Transport.state === 'started') {
+    Tone.Transport.pause();
+    playBtn.textContent = 'Play';
+  } else {
+    startWithPreroll();
+  }
+}
+function stopAll() {
+  cancelCountdown();
+  Tone.Transport.stop();
+  Tone.Transport.seconds = 0;
+  parts.forEach(p => { try { p.synth.releaseAll(); } catch (e) {} });
+  resetScanners();
+  clearTrail();
+  playBtn.textContent = 'Play';
+}
+playBtn.addEventListener('click', togglePlay);
+stopBtn.addEventListener('click', stopAll);
+
+let seeking = false;
+seekEl.addEventListener('input', () => {
+  seeking = true;
+  Tone.Transport.seconds = parseFloat(seekEl.value) * songDuration;
+  clearTrail();
+});
+seekEl.addEventListener('change', () => { seeking = false; });
+
+window.addEventListener('keydown', e => {
+  if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+  if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+  else if (e.code === 'ArrowRight') Tone.Transport.seconds = Math.min(songDuration, Tone.Transport.seconds + 5);
+  else if (e.code === 'ArrowLeft') Tone.Transport.seconds = Math.max(0, Tone.Transport.seconds - 5);
+  else if (e.code === 'Escape') stopAll();
+});
+
+/* ============================================================
+   MIDI LOAD
+   ============================================================ */
+const errEl = document.getElementById('load-error');
+document.getElementById('midi-upload').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onerror = () => showError('Could not read that file.');
+  reader.onload = ev => {
+    try {
+      const midi = new Midi(ev.target.result);
+      if (!midi.tracks.some(t => t.notes.length)) throw new Error('No notes found in this file.');
+      stopAll(); disposeAudio();
+      parsedMidi = midi;
+      normTracks = normalizeTracks(midi);
+      songDuration = midi.duration || 1;
+      trackMeta = midi.tracks
+        .map((t, i) => ({ index: i, name: t.name || (t.instrument && t.instrument.name) || `Track ${i + 1}`, count: t.notes.length }))
+        .filter(t => t.count > 0);
+      errEl.classList.add('collapsed');
+      populateTrackSelects();
+      buildMixer();
+      resetScanners();
+      seekEl.disabled = false; playBtn.disabled = false; stopBtn.disabled = false;
+      playBtn.textContent = 'Play';
+      document.getElementById('time-total').textContent = fmt(songDuration);
+    } catch (err) {
+      showError('Could not parse MIDI: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+});
+function showError(msg) { errEl.textContent = msg; errEl.classList.remove('collapsed'); }
+
+/* ============================================================
+   PANEL GENERATION  (derived entirely from SHAPES)
+   ============================================================ */
+function el(html) { const d = document.createElement('div'); d.innerHTML = html.trim(); return d.firstElementChild; }
+const MIRROR_LABEL = { none: 'None', lr: 'Left/Right', opp: 'Opposite', radial: 'Radial' };
+
+function buildRouting() {
+  const host = document.getElementById('routing-matrix');
+  host.innerHTML = SHAPES.map((s, i) => `
+    <div class="flex items-center justify-between mt-2 text-xs text-gray-300">
+      <div class="flex items-center"><input type="color" class="swatch" data-cfg="lane.${s.id}.0.color" value="${s.glow}" title="Lane 1 color">T${i + 1}: ${s.label}</div>
+      <select data-cfg="shape.${s.id}.track" style="max-width:140px"><option value="none">-- None --</option></select>
+    </div>`).join('');
+}
+
+function buildShapeSections() {
+  const host = document.getElementById('shape-sections');
+  host.innerHTML = SHAPES.map(s => {
+    const laneRowHtml = (ln, li) => `
+      <div class="lane-row">
+        <input type="checkbox" data-cfg="lane.${s.id}.${li}.on" checked>
+        <input type="color" class="swatch" data-cfg="lane.${s.id}.${li}.color" value="${s.glow}" title="${ln.label} glow color (outer)">
+        <input type="color" class="swatch" data-cfg="lane.${s.id}.${li}.ink" value="${s.ink}" title="${ln.label} ink color (inner core)">
+        <select data-cfg="lane.${s.id}.${li}.track" title="${ln.label} track">
+          <option value="shared">${ln.label}: same</option>
+        </select>
+        <select data-cfg="lane.${s.id}.${li}.dir">
+          <option value="forward">Forward</option><option value="backward">Backward</option>
+        </select>
+      </div>`;
+    let lanes;
+    if (s.laneGroups) {
+      let idx = 0;
+      lanes = s.laneGroups.map(grp => {
+        const rows = s.lanes.slice(idx, idx + grp.count).map((ln, gi) => laneRowHtml(ln, idx + gi)).join('');
+        idx += grp.count;
+        return `<div class="lane-group-label">${grp.label}</div>${rows}`;
+      }).join('');
+    } else {
+      lanes = s.lanes.map((ln, li) => laneRowHtml(ln, li)).join('');
+    }
+    const shapeOpts = Object.keys(NOTE_SHAPE_LABEL).map(k =>
+      `<option value="${k}"${(s.glyph === 'dot' ? 'circle' : 'line') === k ? ' selected' : ''}>${NOTE_SHAPE_LABEL[k]}</option>`).join('');
+    const hasMirrorLane = s.lanes.some(l => l.id === 'mirror') || s.usesMirrorMode === true;
+    const hasTwist = s.twistSpeed !== undefined;
+    return `
+    <div class="path-panel" data-shape-id="${s.id}" style="display:none">
+      <div class="flex items-center mb-2">
+        <span class="text-sm font-semibold text-white flex items-center"><input type="color" class="swatch swatch-hex" data-cfg="lane.${s.id}.0.color" value="${s.glow}" title="Lane 1 color">${s.label}</span>
+      </div>
+      ${s.lanes.length > 1 ? `
+      <div class="flex flex-wrap gap-2 mb-2">
+        <button type="button" class="btn-sm" data-match-colors="${s.id}">Match all lanes to Lane 1</button>
+        ${s.lanes.length === 2 ? `<button type="button" class="btn-sm" data-swap-colors="${s.id}">Swap Lane 1 / Lane 2 colors</button>` : ''}
+      </div>` : ''}
+      <div class="grid grid-cols-3 gap-2 mt-2 mb-2">
+        <div><span class="lbl">BASE <span class="text-gray-300 font-mono" id="ro-base-${s.id}">36</span></span>
+          <input type="range" data-cfg="shape.${s.id}.base" data-readout="ro-base-${s.id}" min="0" max="127" step="1" value="36"
+            title="Lowest MIDI note this path responds to"></div>
+        <div><span class="lbl">SPREAD <span class="text-gray-300 font-mono" id="ro-spread-${s.id}">60</span></span>
+          <input type="range" data-cfg="shape.${s.id}.spread" data-readout="ro-spread-${s.id}" min="1" max="127" step="1" value="60"
+            title="Note range mapped across the path, starting at BASE"></div>
+        ${hasMirrorLane ? `
+        <div class="col-span-2"><span class="lbl text-pink-300">MIRROR MODE (how the second lane relates to the first)</span>
+          <select data-cfg="shape.${s.id}.mirrorMode">
+            <option value="opp"${(s.id !== 'ladder' && s.id !== 'barc' && s.id !== 'dna') ? ' selected' : ''}>Opposite &mdash; phase-shifted point on the same curve</option>
+            <option value="lr"${(s.id === 'ladder' || s.id === 'barc' || s.id === 'dna') ? ' selected' : ''}>Left / Right &mdash; flipped horizontally</option>
+            <option value="radial">Radial &mdash; reflected through the center</option>
+          </select>
+        </div>` : ''}
+        ${hasTwist ? `
+        <div class="col-span-2"><span class="lbl text-violet-300">TWIST SPEED <span class="text-gray-300 font-mono" id="ro-twist-${s.id}">${s.twistSpeed}</span></span>
+          <input type="range" data-cfg="shape.${s.id}.twistSpeed" data-readout="ro-twist-${s.id}" data-snap-mid="0" min="-4" max="4" step="0.1" value="${s.twistSpeed}"
+            title="How fast the whole pattern turns as the song plays — 0 stops it, negative reverses direction"></div>` : ''}
+        ${s.id === 'dna' ? `
+        <div class="col-span-2"><span class="lbl text-violet-300">HELIX MODE</span>
+          <select data-cfg="shape.${s.id}.helixMode">
+            <option value="classic" selected>Classic &mdash; 2-way offset (Strand A/B cross at 180&deg;)</option>
+            <option value="waterfall">Waterfall &mdash; 4-way offset (all 4 sub-lanes 90&deg; apart)</option>
+          </select>
+        </div>
+        <div class="text-[10px] text-gray-500 -mt-1 mb-1 col-span-2 leading-snug">
+          Waterfall fixes the "flat line" problem when every lane is set to flow the same visual
+          direction at once — Classic's 180&deg; offset can make two same-direction strands collapse
+          onto each other; Waterfall's four 90&deg; slots never fully overlap. Switch to it only if
+          you hit that specific problem — it changes the default crossing look otherwise.
+        </div>
+        <div><span class="lbl text-violet-300">WIND DIR &mdash; STRAND A</span>
+          <select data-cfg="shape.${s.id}.windDirA">
+            <option value="1" selected>Normal</option>
+            <option value="-1">Reversed</option>
+          </select>
+        </div>
+        <div><span class="lbl text-violet-300">WIND DIR &mdash; STRAND B</span>
+          <select data-cfg="shape.${s.id}.windDirB">
+            <option value="1">Normal</option>
+            <option value="-1" selected>Reversed</option>
+          </select>
+        </div>` : ''}
+        <div><span class="lbl">INK COLOR (Lane 1)</span>
+          <input type="color" class="swatch-hex" data-cfg="lane.${s.id}.0.ink" value="${s.ink}"
+            style="width:100%;height:26px;padding:1px 2px;border-radius:4px;border:1px solid #555;background:transparent;cursor:pointer;"></div>
+        <div><span class="lbl text-emerald-400">NOTE LENGTH <span class="text-gray-300 font-mono" id="ro-lenScale-${s.id}">1</span></span>
+          <input type="range" data-cfg="shape.${s.id}.lenScale" data-readout="ro-lenScale-${s.id}" data-snap-mid="1" min="0.1" max="6" step="0.05" value="1"
+            title="This path's own note length, on top of the global NOTE LENGTH. Only visible on bar-style note shapes — dot/circle shapes have no separate length axis."></div>
+        <div><span class="lbl text-emerald-400">NOTE THICKNESS <span class="text-gray-300 font-mono" id="ro-thickScale-${s.id}">1</span></span>
+          <input type="range" data-cfg="shape.${s.id}.thickScale" data-readout="ro-thickScale-${s.id}" data-snap-mid="1" min="0.1" max="6" step="0.05" value="1"
+            title="This path's own note thickness (and overall size for dot/circle shapes), on top of the global NOTE THICKNESS."></div>
+        <div><span class="lbl text-sky-300">POSITION X <span class="text-gray-300 font-mono" id="ro-offX-${s.id}">0</span></span>
+          <input type="range" data-cfg="shape.${s.id}.offX" data-readout="ro-offX-${s.id}" data-snap-mid="0" min="-400" max="400" step="2" value="0"
+            title="Shifts this path left/right — snaps back to center near 0. Double-click to reset."></div>
+        <div><span class="lbl text-sky-300">POSITION Y <span class="text-gray-300 font-mono" id="ro-offY-${s.id}">0</span></span>
+          <input type="range" data-cfg="shape.${s.id}.offY" data-readout="ro-offY-${s.id}" data-snap-mid="0" min="-400" max="400" step="2" value="0"
+            title="Shifts this path up/down — snaps back to center near 0. Double-click to reset."></div>
+        <div><span class="lbl text-orange-300">DISTORT X <span class="text-gray-300 font-mono" id="ro-distX-${s.id}">1</span></span>
+          <input type="range" data-cfg="shape.${s.id}.distX" data-readout="ro-distX-${s.id}" data-snap-mid="1" min="0.2" max="3" step="0.05" value="1"
+            title="Stretches the path's actual geometry horizontally, not just the note glyph. Snaps to 1 near normal — double-click to reset."></div>
+        <div><span class="lbl text-orange-300">DISTORT Y <span class="text-gray-300 font-mono" id="ro-distY-${s.id}">1</span></span>
+          <input type="range" data-cfg="shape.${s.id}.distY" data-readout="ro-distY-${s.id}" data-snap-mid="1" min="0.2" max="3" step="0.05" value="1"
+            title="Stretches the path's actual geometry vertically, not just the note glyph. Snaps to 1 near normal — double-click to reset."></div>
+        <div><span class="lbl">TAIL LENGTH <span class="text-gray-300 font-mono" id="ro-wispLife-${s.id}">0.9</span></span>
+          <input type="range" data-cfg="shape.${s.id}.wispLife" data-readout="ro-wispLife-${s.id}" data-snap-mid="0" min="0" max="6" step="0.05" value="0.9"
+            title="Length of the taper behind each note — 0 disables it"></div>
+        <div class="col-span-2"><span class="lbl text-lime-400">NOTE SHAPE</span>
+          <select data-cfg="shape.${s.id}.noteShape">${shapeOpts}</select></div>
+        <div><span class="lbl text-lime-400">VIBRATO</span>
+          <input type="range" data-cfg="shape.${s.id}.vibAmt" data-snap-mid="0" min="0" max="40" step="0.5" value="0"
+            title="Swiggle depth in pixels"></div>
+        <div class="col-span-2"><span class="lbl text-rose-300">PETALS</span>
+          <input type="range" data-cfg="shape.${s.id}.petalAmt" data-snap-mid="0" min="0" max="1" step="0.01" value="0"
+            title="Petal particles shed when a note ends"></div>
+        <div><span class="lbl text-rose-300">PETAL FALL</span>
+          <input type="range" data-cfg="shape.${s.id}.petalFall" data-snap-mid="0" min="0" max="200" step="1" value="55"
+            title="Gravity — 0 leaves them floating"></div>
+        <div class="col-span-2"><span class="lbl text-lime-400">VIBRATO RATE</span>
+          <input type="range" data-cfg="shape.${s.id}.vibRate" min="0.5" max="20" step="0.1" value="5"
+            title="Swiggles per second"></div>
+        <div class="col-span-2"><span class="lbl text-fuchsia-400">PATH REVERB <span class="text-gray-300 font-mono" id="ro-revAmt-${s.id}">0</span></span>
+          <input type="range" data-cfg="shape.${s.id}.revAmt" data-readout="ro-revAmt-${s.id}" data-snap-mid="0" min="0" max="2" step="0.01" value="0"
+            title="Decaying echoes back along this shape's path"></div>
+        <div class="col-span-2"><span class="lbl text-sky-400">REVERB BLOOM</span>
+          <input type="range" data-cfg="shape.${s.id}.bloomAmt" data-snap-mid="0" min="0" max="1" step="0.01" value="0"
+            title="Expanding ring that radiates outward and fades — triggers on note END"></div>
+        <div class="col-span-2"><span class="lbl text-amber-400">FIREWORK BLOOM</span>
+          <input type="range" data-cfg="shape.${s.id}.fireworkAmt" data-snap-mid="0" min="0" max="1" step="0.01" value="0"
+            title="Sparks burst outward radially the instant a note starts — triggers on note ATTACK, the opposite moment from Reverb Bloom"></div>
+        <div><span class="lbl text-fuchsia-400">BASS WEIGHT</span>
+          <label class="flex items-center gap-1 mt-1 cursor-pointer">
+            <input type="checkbox" data-cfg="shape.${s.id}.revBass" checked>
+            <span class="text-[10px] text-gray-400">Low = longer</span>
+          </label></div>
+      </div>
+      <span class="lbl">LANES &mdash; ON / GLOW / INK / TRACK / DIRECTION</span>
+      ${lanes}
+    </div>`;
+  }).join('');
+
+  const tabHost = document.getElementById('path-tabs');
+  tabHost.innerHTML = SHAPES.map((s, i) => `
+    <div class="path-tab-group">
+      <button type="button" class="path-tab" data-select-shape="${s.id}" title="${s.label}">
+        <span class="tab-dot" data-shape-dot="${s.id}" style="background:${s.glow}"></span>T${i + 1}
+      </button>
+      <button type="button" class="tab-hide-btn" data-hide-shape="${s.id}">👁</button>
+    </div>`).join('');
+  tabHost.querySelectorAll('[data-select-shape]').forEach(btn => {
+    btn.addEventListener('click', () => selectShape(btn.dataset.selectShape));
+  });
+  tabHost.querySelectorAll('[data-hide-shape]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const lanes = cfg.shapes[btn.dataset.hideShape].lanes;
+      const nowOn = !lanes.some(l => l.on);   // if any lane is currently on, this click hides them all
+      lanes.forEach(l => l.on = nowOn);
+      writeConfigToDOM();
+      invalidateBlueprint();
+      saveLocal();
+      refreshHideButtons();
+    });
+  });
+  refreshHideButtons();
+
+  host.querySelectorAll('[data-match-colors]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const lanes = cfg.shapes[btn.dataset.matchColors].lanes;
+      const glow = lanes[0].color, ink = lanes[0].ink;
+      for (let li = 1; li < lanes.length; li++) { lanes[li].color = glow; lanes[li].ink = ink; }
+      writeConfigToDOM();
+      saveLocal();
+    });
+  });
+  host.querySelectorAll('[data-swap-colors]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const lanes = cfg.shapes[btn.dataset.swapColors].lanes;
+      if (lanes.length !== 2) return;
+      [lanes[0].color, lanes[1].color] = [lanes[1].color, lanes[0].color];
+      [lanes[0].ink, lanes[1].ink] = [lanes[1].ink, lanes[0].ink];
+      writeConfigToDOM();
+      saveLocal();
+    });
+  });
+
+  if (SHAPES.length) selectShape(SHAPES[0].id);
+  refreshTabTrackHighlights();
+}
+
+/* Only one path's control panel is shown at a time — the tab strip above
+   switches which one, so tweaking one path never means scrolling past
+   the other eight. Selecting a tab also highlights that path's own trace
+   in the blueprint, so it's easy to pick out among ten overlapping guides. */
+let activeShapeId = null;
+function selectShape(id) {
+  activeShapeId = id;
+  document.querySelectorAll('.path-panel').forEach(el => {
+    el.style.display = (el.dataset.shapeId === id) ? '' : 'none';
+  });
+  document.querySelectorAll('.path-tab').forEach(el => {
+    el.classList.toggle('path-tab-active', el.dataset.selectShape === id);
+  });
+  invalidateBlueprint();
+}
+
+/* Keeps each tab's hide/show icon (and styling) matching whether any lane
+   of that shape is currently on — called after the hide button itself is
+   clicked, and after any individual lane's ON checkbox changes too, so the
+   two stay consistent with each other either way you toggle things. */
+function refreshHideButtons() {
+  document.querySelectorAll('[data-hide-shape]').forEach(btn => {
+    const lanes = cfg.shapes[btn.dataset.hideShape] && cfg.shapes[btn.dataset.hideShape].lanes;
+    const anyOn = lanes && lanes.some(l => l.on);
+    btn.textContent = anyOn ? '👁' : '🚫';
+    btn.classList.toggle('tab-hidden', !anyOn);
+    btn.title = anyOn ? 'Hide this path (mutes every lane)' : 'Show this path (unmutes every lane)';
+  });
+}
+
+/* True if any lane of this shape resolves to a real MIDI track — a lane
+   set to "same" defers to the shape's own track, so both are checked. */
+function shapeHasTrack(sid) {
+  const sc = cfg.shapes[sid];
+  if (!sc) return false;
+  return sc.lanes.some(l => {
+    const t = (l.track === 'shared') ? sc.track : l.track;
+    return t && t !== 'none';
+  });
+}
+/* Outlines a tab once its path has an instrument routed to it, so you can
+   see at a glance which of the 14 paths are actually wired up. Called
+   whenever any track dropdown changes, and after presets load. */
+function refreshTabTrackHighlights() {
+  document.querySelectorAll('.path-tab[data-select-shape]').forEach(btn => {
+    btn.classList.toggle('has-instrument', shapeHasTrack(btn.dataset.selectShape));
+  });
+  if (typeof buildInstrumentGroups === 'function') buildInstrumentGroups();
+}
+
+/* Map<trackIndex string, [{sid, li}, ...]> — every lane, across every
+   shape, that resolves to each MIDI track currently in use. This is the
+   "instrument group": the set of lanes that should share one color. */
+function usedTracksMap() {
+  const map = new Map();
+  SHAPES.forEach(s => {
+    const sc = cfg.shapes[s.id];
+    sc.lanes.forEach((l, li) => {
+      const t = (l.track === 'shared') ? sc.track : l.track;
+      if (t && t !== 'none') {
+        const key = String(t);
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push({ sid: s.id, li });
+      }
+    });
+  });
+  return map;
+}
+
+/* Sets every lane in an instrument group to the same glow color at once —
+   this is what the shared swatch in Instrument Colors, and the Randomize
+   button, both call. */
+/* Sets every lane in an instrument group to the same glow color at once —
+   this is what the shared swatch in Instrument Colors, and the Randomize
+   button, both call. Deliberately does NOT rebuild the Instrument Colors
+   list itself here — that swatch might be the very node mid-drag, and
+   destroying/recreating it while its native picker is open would cut the
+   interaction short. The list only rebuilds on 'change', once you're done. */
+function applyInstrumentColor(trackIdx, color, inkColor) {
+  const uses = usedTracksMap().get(String(trackIdx)) || [];
+  const ink = inkColor || lightenColor(color, 0.72);
+  uses.forEach(({ sid, li }) => {
+    cfg.shapes[sid].lanes[li].color = color;
+    cfg.shapes[sid].lanes[li].ink = ink;
+  });
+  writeConfigToDOM();
+  invalidateBlueprint();
+  document.querySelectorAll('.path-tab[data-select-shape]').forEach(btn => {
+    btn.classList.toggle('has-instrument', shapeHasTrack(btn.dataset.selectShape));
+  });
+}
+
+function buildInstrumentGroups() {
+  const host = document.getElementById('instrument-groups');
+  if (!host) return;
+  const map = usedTracksMap();
+  if (map.size === 0) {
+    host.innerHTML = '<div class="text-xs text-gray-500">No paths routed to a track yet.</div>';
+    return;
+  }
+  host.innerHTML = [...map.entries()].map(([trackIdx, uses]) => {
+    const meta = trackMeta[+trackIdx];
+    const name = meta ? escapeHtml(meta.name) : `Track ${trackIdx}`;
+    const col = cfg.shapes[uses[0].sid].lanes[uses[0].li].color || '#ffffff';
+    return `
+    <div class="flex items-center justify-between mt-2 text-xs text-gray-300">
+      <div class="flex items-center gap-2 min-w-0">
+        <input type="color" class="swatch" data-instrument-color="${trackIdx}" value="${col}" title="Color for every path using this instrument">
+        <span class="truncate">${name}</span>
+      </div>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <button type="button" class="btn-sm" style="padding:2px 8px;" data-instrument-apply="${trackIdx}"
+          title="Push this swatch's color to every path using this instrument">Apply</button>
+        <span class="text-gray-500">${uses.length} path${uses.length > 1 ? 's' : ''}</span>
+      </div>
+    </div>`;
+  }).join('');
+  host.querySelectorAll('[data-instrument-apply]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const inp = host.querySelector(`[data-instrument-color="${btn.dataset.instrumentApply}"]`);
+      if (inp) { applyInstrumentColor(btn.dataset.instrumentApply, inp.value); saveLocal(); buildInstrumentGroups(); }
+    });
+  });
+  host.querySelectorAll('[data-instrument-color]').forEach(inp => {
+    inp.addEventListener('input', () => applyInstrumentColor(inp.dataset.instrumentColor, inp.value));
+    inp.addEventListener('change', () => {
+      applyInstrumentColor(inp.dataset.instrumentColor, inp.value);
+      saveLocal();
+      buildInstrumentGroups();
+    });
+  });
+}
+
+/* Vivid, well-spaced random colors (HSL with high saturation, mid
+   lightness) rather than raw random RGB, which tends toward muddy or
+   near-identical results. */
+function randomVividColor() {
+  const h = Math.floor(Math.random() * 360);
+  const s = 70 + Math.random() * 25, l = 50 + Math.random() * 12;
+  const sf = s / 100, lf = l / 100;
+  const k = n => (n + h / 30) % 12;
+  const a = sf * Math.min(lf, 1 - lf);
+  const f = n => lf - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  const hex = x => Math.round(255 * x).toString(16).padStart(2, '0');
+  return `#${hex(f(0))}${hex(f(8))}${hex(f(4))}`;
+}
+/* Blends a hex color toward white — used to derive ink from glow so the
+   two are guaranteed to be the same hue family (a pale tint of it)
+   rather than two independently-random colors that might clash. This
+   is the same relationship every built-in shape's own default glow/ink
+   pair already uses (e.g. Diamond's #ff00ff glow with #ffccff ink). */
+function lightenColor(hexStr, amount) {
+  let h = String(hexStr).replace('#', '');
+  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  const n = parseInt(h, 16) || 0;
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  const mix = (c) => Math.round(c + (255 - c) * amount);
+  const hex = (x) => x.toString(16).padStart(2, '0');
+  return `#${hex(mix(r))}${hex(mix(g))}${hex(mix(b))}`;
+}
+function randomizeColors() {
+  usedTracksMap().forEach((uses, trackIdx) => {
+    const glow = randomVividColor();
+    applyInstrumentColor(trackIdx, glow, lightenColor(glow, 0.72));
+  });
+  buildInstrumentGroups();
+  saveLocal();
+}
+
+function populateTrackSelects() {
+  const opts = trackMeta.map(t => `<option value="${t.index}">${escapeHtml(t.name)} (${t.count})</option>`).join('');
+  document.querySelectorAll('select[data-cfg^="shape."][data-cfg$=".track"]').forEach((sel, i) => {
+    sel.innerHTML = `<option value="none">-- None --</option>` + opts;
+    const def = trackMeta[i % trackMeta.length];
+    if (def) sel.value = String(def.index);
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  document.querySelectorAll('select[data-cfg^="lane."][data-cfg$=".track"]').forEach(sel => {
+    const label = sel.querySelector('option') ? sel.querySelector('option').textContent : 'same';
+    sel.innerHTML = `<option value="shared">${escapeHtml(label)}</option>` + opts;
+    sel.value = 'shared';
+  });
+  const eqSel = document.getElementById('eq-track');
+  if (eqSel) { const prev = eqSel.value; eqSel.innerHTML = `<option value="all">All tracks</option>` + opts;
+    eqSel.value = [...eqSel.options].some(o => o.value === prev) ? prev : 'all'; }
+  const voiceSel = document.getElementById('voice-track');
+  if (voiceSel) { const prev = voiceSel.value; voiceSel.innerHTML = `<option value="all">All tracks</option><option value="none">-- None --</option>` + opts;
+    voiceSel.value = [...voiceSel.options].some(o => o.value === prev) ? prev : 'all';
+    voiceSel.dispatchEvent(new Event('change', { bubbles: true })); }
+  ['orbit-track', 'subwave-track'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const prev = sel.value; sel.innerHTML = `<option value="all">All tracks</option>` + opts;
+    sel.value = [...sel.options].some(o => o.value === prev) ? prev : 'all';
+  });
+}
+function escapeHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+function buildMixer() {
+  const host = document.getElementById('mixer-list');
+  host.innerHTML = trackMeta.map(t => `
+    <label class="flex items-center gap-2 mb-1 cursor-pointer">
+      <input type="checkbox" data-mute="${t.index}" ${cfg.mutes[t.index] ? '' : 'checked'}>
+      <span class="truncate">${escapeHtml(t.name)}</span>
+      <span class="text-gray-600 ml-auto">${t.count}</span>
+    </label>`).join('');
+  host.querySelectorAll('input[data-mute]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const i = parseInt(cb.dataset.mute, 10);
+      cfg.mutes[i] = !cb.checked;
+      if (trackGains[i]) trackGains[i].gain.rampTo(cb.checked ? 1 : 0, 0.05);
+      saveLocal();
+    });
+  });
+}
+
+buildRouting();
+buildShapeSections();
+
+/* Collapsible sections */
+document.addEventListener('click', e => {
+  const hd = e.target.closest('[data-toggle]');
+  if (!hd) return;
+  if (e.target.closest('input,select')) return;   // e.g. clicking the header color swatch
+  const body = document.getElementById(hd.dataset.toggle);
+  const icon = hd.querySelector('.toggle-icon');
+  const now = body.classList.toggle('collapsed');
+  if (icon) icon.textContent = now ? '[+]' : '[-]';
+});
+
+/* ------------------------------------------------------------
+   CONFIG BINDING
+   Panel state is mirrored into `cfg` on change. The render loop
+   never touches the DOM.
+   ------------------------------------------------------------ */
+
+// TDZ FIX: Moved these variables up here so they are initialized BEFORE applyControl uses them
+const cueBtn      = document.getElementById('cue-btn');
+let   allHidden   = false;
+let   firstNote   = null;       // earliest note time across routed tracks
+let   flashUntil  = -1;         // transport time the sync flash stops
+let   lastFlashed = -1;
+
+function applyControl(node) {
+  const path = node.dataset.cfg;
+  if (!path) return;
+  const raw = node.type === 'checkbox' ? node.checked : node.value;
+  const parts_ = path.split('.');
+  if (parts_[0] === 'shape') {
+    const [, sid, key] = parts_;
+    let v = raw;
+    if (key === 'base') v = parseFloat(raw) || 0;
+    if (key === 'spread') v = Math.max(1, parseFloat(raw) || 60);
+    if (key === 'wispLife' || key === 'revAmt' || key === 'bloomAmt' || key === 'fireworkAmt' ||
+        key === 'vibAmt' || key === 'vibRate' || key === 'lenScale' || key === 'thickScale' ||
+        key === 'offX' || key === 'offY' || key === 'distX' || key === 'distY' || key === 'twistSpeed' ||
+        key === 'windDirA' || key === 'windDirB' ||
+        key === 'petalAmt' || key === 'petalFall') v = parseFloat(raw);
+    cfg.shapes[sid][key] = v;
+    // keep the live SHAPES object in sync so renderShapes() sees the new color
+    if ((key === 'glow' || key === 'ink') && SHAPE_BY_ID[sid]) {
+      SHAPE_BY_ID[sid][key] = v;
+      invalidateBlueprint();
+    }
+    if (key === 'glow') {
+      const dot = document.querySelector(`[data-shape-dot="${sid}"]`);
+      if (dot) dot.style.background = v;
+    }
+    if (key === 'offX' || key === 'offY' || key === 'distX' || key === 'distY' || key === 'mirrorMode' || key === 'twistSpeed' ||
+        key === 'helixMode' || key === 'windDirA' || key === 'windDirB') invalidateBlueprint();
+    if (key === 'track') { resetScanners(); firstNote = null; if (typeof computeFirstNote === 'function') computeFirstNote(); refreshTabTrackHighlights(); }
+  } else if (parts_[0] === 'lane') {
+    const [, sid, li, key] = parts_;
+    cfg.shapes[sid].lanes[+li][key] = raw;
+    if (key === 'track') { resetScanners(); firstNote = null; if (typeof computeFirstNote === 'function') computeFirstNote(); refreshTabTrackHighlights(); }
+    // Lane 1's color drives the tab-strip dot and the blueprint's guide color
+    if (key === 'color' && +li === 0) {
+      const dot = document.querySelector(`[data-shape-dot="${sid}"]`);
+      if (dot) dot.style.background = raw;
+    }
+    // Glow changing anywhere (header swatch, a lane row, routing matrix)
+    // re-derives that same lane's ink as a pale tint of it — the same
+    // guaranteed-harmonious relationship Randomize Colors uses, applied
+    // everywhere a glow color gets set rather than just there. Editing
+    // ink directly still works independently; this only fires on glow.
+    if (key === 'color' && typeof lightenColor === 'function') {
+      const tint = lightenColor(raw, 0.72);
+      cfg.shapes[sid].lanes[+li].ink = tint;
+      document.querySelectorAll(`[data-cfg="lane.${sid}.${li}.ink"]`).forEach(n => {
+        n.value = tint;
+        if (n.classList.contains('swatch-hex') && n.nextElementSibling &&
+            n.nextElementSibling.classList.contains('hex-input')) {
+          n.nextElementSibling.value = tint;
+        }
+      });
+    }
+    if (key === 'color' || key === 'ink') invalidateBlueprint();
+    if (key === 'on') { invalidateBlueprint(); if (typeof refreshHideButtons === 'function') refreshHideButtons(); }
+  } else {
+    const key = parts_[0];
+    cfg[key] = (node.type === 'checkbox') ? raw
+             : (node.type === 'range' || node.type === 'number') ? parseFloat(raw) : raw;
+  }
+  // the glow swatch appears twice (routing matrix + shape header) — keep
+  // whichever one wasn't just edited showing the same color
+  if (node.type === 'color') {
+    document.querySelectorAll(`[data-cfg="${path}"]`).forEach(n => {
+      if (n === node) return;
+      n.value = raw;
+      if (n.classList.contains('swatch-hex') && n.nextElementSibling &&
+          n.nextElementSibling.classList.contains('hex-input')) {
+        n.nextElementSibling.value = raw;
+      }
+    });
+  }
+  // sliders with a paired number readout (e.g. BASE/SPREAD) keep it live
+  if (node.dataset.readout) {
+    const ro = document.getElementById(node.dataset.readout);
+    if (ro) ro.textContent = node.value;
+  }
+}
+/* Magnetic middle: a slider flagged data-snap-mid snaps exactly to its
+   center value (its neutral/default position — 0 for POSITION X/Y) once
+   the drag lands within a small window of it, so returning to "off" is
+   a deliberate snap rather than a pixel-hunt. Double-click resets it
+   outright, no dragging required. */
+function snapTarget(node) {
+  // data-snap-mid can carry an explicit neutral value (Distort's is 1, not
+  // its slider's midpoint); with no value given, fall back to the midpoint
+  return node.dataset.snapMid ? parseFloat(node.dataset.snapMid)
+       : (parseFloat(node.min) + parseFloat(node.max)) / 2;
+}
+function applySnap(node) {
+  if (node.type !== 'range' || node.dataset.snapMid === undefined) return;
+  const target = snapTarget(node);
+  const threshold = (parseFloat(node.max) - parseFloat(node.min)) * 0.05;   // ~5% of travel — a firm, easy-to-hit magnetic pull
+  if (Math.abs(parseFloat(node.value) - target) < threshold) node.value = target;
+}
+function bindControls() {
+  document.querySelectorAll('[data-cfg]').forEach(node => {
+    applyControl(node);
+    node.addEventListener('change', () => { applySnap(node); applyControl(node); saveLocal(); });
+    node.addEventListener('input', () => { applySnap(node); applyControl(node); });
+    if (node.dataset.snapMid !== undefined) {
+      node.addEventListener('dblclick', () => {
+        node.value = snapTarget(node);
+        applyControl(node); saveLocal();
+      });
+    }
+  });
+}
+/* globals */
+const G = [['g-bp', 'bp'], ['g-trail', 'trail'], ['g-len', 'len'], ['g-thick', 'thick'],
+           ['g-vel', 'vel'], ['g-glow', 'glow'], ['a-vol', 'vol'],
+           ['g-rscale', 'rscale'], ['g-wispcap', 'wispcap'], ['g-offset', 'offset'],
+           ['g-maxhold', 'maxHold'], ['g-preroll', 'preroll'], ['g-energy', 'energy'],
+           ['g-screenshake', 'screenShake'], ['g-audiogain', 'audioEnergyGain']];
+G.forEach(([id, key]) => {
+  const n = document.getElementById(id);
+  const read = () => {
+    cfg[key] = key === 'bp' ? n.value === '1' : parseFloat(n.value);
+    if (key === 'vol' && masterVol) masterVol.volume.rampTo(cfg.vol, 0.05);
+    if (key === 'rscale') resize();
+    if (key === 'wispcap') { petalCap = cfg.wispcap; if (petals.length > petalCap) petals.length = petalCap; }
+    if (key === 'offset') { const el = document.getElementById('offset-read');
+                            if (el) el.textContent = Math.round(cfg.offset) + ' ms'; }
+    if (n.dataset.readout) { const ro = document.getElementById(n.dataset.readout);
+                              if (ro) ro.textContent = n.value; }
+  };
+  read();
+  n.addEventListener('input', () => { applySnap(n); read(); });
+  n.addEventListener('change', () => { applySnap(n); read(); saveLocal(); });
+  if (n.dataset.snapMid !== undefined) {
+    n.addEventListener('dblclick', () => { n.value = snapTarget(n); read(); saveLocal(); });
+  }
+});
+bindControls();
+
+/* Adds a typeable hex code box next to every .swatch-hex color input
+   (the shape header swatch and INK COLOR — the roomy ones; lane-row
+   swatches stay compact and rely on the native picker's own hex field
+   instead, since there's no room for a second control there). Two-way
+   synced: typing a valid hex updates the color picker (and cfg through
+   it), and picking a color updates the displayed hex. */
+function enhanceColorInputs() {
+  document.querySelectorAll('input[type="color"].swatch-hex').forEach(colorInput => {
+    if (colorInput.dataset.hexLinked) return;
+    colorInput.dataset.hexLinked = '1';
+    const hexInput = document.createElement('input');
+    hexInput.type = 'text';
+    hexInput.className = 'hex-input';
+    hexInput.maxLength = 7;
+    hexInput.spellcheck = false;
+    hexInput.value = colorInput.value;
+    hexInput.title = 'Type an exact hex color code';
+    colorInput.insertAdjacentElement('afterend', hexInput);
+
+    colorInput.addEventListener('input', () => { hexInput.value = colorInput.value; });
+    const applyHex = () => {
+      let v = hexInput.value.trim();
+      if (v && !v.startsWith('#')) v = '#' + v;
+      if (/^#[0-9a-fA-F]{6}$/.test(v)) {
+        colorInput.value = v;
+        colorInput.dispatchEvent(new Event('input', { bubbles: true }));
+        colorInput.dispatchEvent(new Event('change', { bubbles: true }));
+      } else {
+        hexInput.value = colorInput.value;   // invalid entry -> snap back to the real value
+      }
+    };
+    hexInput.addEventListener('change', applyHex);
+    hexInput.addEventListener('keydown', e => { if (e.key === 'Enter') hexInput.blur(); });
+  });
+}
+enhanceColorInputs();
+
+/* ------------------------------------------------------------
+   PRESETS
+   ------------------------------------------------------------ */
+function writeConfigToDOM() {
+  document.querySelectorAll('[data-cfg]').forEach(node => {
+    const p = node.dataset.cfg.split('.');
+    let v;
+    if (p[0] === 'shape') v = cfg.shapes[p[1]][p[2]];
+    else if (p[0] === 'lane') v = cfg.shapes[p[1]].lanes[+p[2]][p[3]];
+    else v = cfg[p[0]];
+    if (v === undefined) return;
+    if (node.type === 'checkbox') node.checked = !!v;
+    else node.value = v;
+    // keep SHAPES live object in sync when restoring a preset
+    if (p[0] === 'shape' && (p[2] === 'glow' || p[2] === 'ink') && SHAPE_BY_ID[p[1]]) {
+      SHAPE_BY_ID[p[1]][p[2]] = v;
+    }
+    // sliders with a paired number readout (e.g. BASE/SPREAD) keep it live
+    if (node.dataset.readout) {
+      const ro = document.getElementById(node.dataset.readout);
+      if (ro) ro.textContent = node.value;
+    }
+    // swatches with a paired hex text field keep it live too
+    if (node.classList.contains('swatch-hex') && node.nextElementSibling &&
+        node.nextElementSibling.classList.contains('hex-input')) {
+      node.nextElementSibling.value = node.value;
+    }
+  });
+  G.forEach(([id, key]) => {
+    const n = document.getElementById(id);
+    n.value = key === 'bp' ? (cfg.bp ? '1' : '0') : cfg[key];
+    if (n.dataset.readout) { const ro = document.getElementById(n.dataset.readout);
+                              if (ro) ro.textContent = n.value; }
+  });
+  // tab-strip dots aren't [data-cfg] nodes, so refresh them separately
+  SHAPES.forEach(s => {
+    const dot = document.querySelector(`[data-shape-dot="${s.id}"]`);
+    const lane0 = cfg.shapes[s.id] && cfg.shapes[s.id].lanes && cfg.shapes[s.id].lanes[0];
+    if (dot) dot.style.background = (lane0 && lane0.color) || s.glow;
+  });
+  if (typeof refreshHideButtons === 'function') refreshHideButtons();
+  if (typeof refreshTabTrackHighlights === 'function') refreshTabTrackHighlights();
+  // EQ Bars / Voice Circle controls aren't [data-cfg] elements (checkbox,
+  // select and color types don't fit that generic numeric sync), so they
+  // get synced here explicitly instead.
+  [['eq-on', 'eqOn'], ['eq-track', 'eqTrack'], ['eq-bands', 'eqBands'], ['eq-color', 'eqColor'],
+   ['eq-base', 'eqBase'], ['eq-spread', 'eqSpread'],
+   ['eq-offx', 'eqOffX'], ['eq-offy', 'eqOffY'], ['eq-distx', 'eqDistX'], ['eq-disty', 'eqDistY'], ['eq-size', 'eqSize'],
+   ['voice-on', 'voiceOn'], ['voice-track', 'voiceTrack'], ['voice-bands', 'voiceBands'],
+   ['voice-color', 'voiceColor'], ['voice-base', 'voiceBase'], ['voice-spread', 'voiceSpread'],
+   ['voice-offx', 'voiceOffX'], ['voice-offy', 'voiceOffY'], ['voice-distx', 'voiceDistX'],
+   ['voice-disty', 'voiceDistY'], ['voice-size', 'voiceSize'],
+   ['orbit-on', 'orbitOn'], ['orbit-track', 'orbitTrack'], ['orbit-color', 'orbitColor'],
+   ['orbit-base', 'orbitBase'], ['orbit-spread', 'orbitSpread'],
+   ['orbit-offx', 'orbitOffX'], ['orbit-offy', 'orbitOffY'], ['orbit-distx', 'orbitDistX'],
+   ['orbit-disty', 'orbitDistY'], ['orbit-size', 'orbitSize'], ['orbit-opacity', 'orbitOpacity'],
+   ['subwave-on', 'subwaveOn'], ['subwave-track', 'subwaveTrack'], ['subwave-color', 'subwaveColor'],
+   ['subwave-base', 'subwaveBase'], ['subwave-spread', 'subwaveSpread'],
+   ['subwave-offx', 'subwaveOffX'], ['subwave-offy', 'subwaveOffY'], ['subwave-distx', 'subwaveDistX'],
+   ['subwave-disty', 'subwaveDistY'], ['subwave-size', 'subwaveSize'], ['subwave-opacity', 'subwaveOpacity']]
+    .forEach(([id, key]) => {
+      const el = document.getElementById(id);
+      if (!el || cfg[key] === undefined) return;
+      if (el.type === 'checkbox') el.checked = !!cfg[key]; else el.value = cfg[key];
+      if (el.dataset.readout) { const ro = document.getElementById(el.dataset.readout); if (ro) ro.textContent = el.value; }
+    });
+  if (typeof makeBandState === 'function') {
+    if (cfg.eqBands) eqState = makeBandState(Math.max(1, Math.round(cfg.eqBands)));
+    if (cfg.voiceBands) voiceState = makeBandState(Math.max(1, Math.round(cfg.voiceBands)));
+  }
+  resetScanners();
+}
+function saveLocal() { try { localStorage.setItem('mam-preset', JSON.stringify(cfg)); } catch (e) {} }
+
+/* Repair a loaded config against the current SHAPES registry: add any
+   shape it's missing (e.g. one added after the preset was saved),
+   resize lane arrays if a shape gained or lost lanes, and fall back
+   the mirror mode if it's no longer valid for that shape. Without
+   this, a preset saved before a shape existed crashes on load. */
+function repairConfig(c) {
+  const fresh = defaultConfig().shapes;
+  SHAPES.forEach(s => {
+    const d = fresh[s.id];
+    const cur = c.shapes[s.id];
+    if (!cur) { c.shapes[s.id] = d; return; }
+    if (!Array.isArray(cur.lanes) || cur.lanes.length !== s.lanes.length) {
+      cur.lanes = d.lanes.map((dl, i) => Object.assign({}, dl, cur.lanes && cur.lanes[i]));
+    }
+    if (!s.mirrors.includes(cur.mirror)) cur.mirror = d.mirror;
+  });
+  return c;
+}
+
+function loadLocal() {
+  try {
+    const raw = localStorage.getItem('mam-preset');
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    cfg = repairConfig(Object.assign(defaultConfig(), saved));
+    writeConfigToDOM();
+  } catch (e) {}
+}
+document.getElementById('p-export').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'mam-preset.json';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+document.getElementById('p-import').addEventListener('click', () => document.getElementById('p-file').click());
+document.getElementById('p-file').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => {
+    try {
+      cfg = repairConfig(Object.assign(defaultConfig(), JSON.parse(ev.target.result)));
+      writeConfigToDOM(); saveLocal();
+    } catch (err) { showError('Bad preset file.'); }
+  };
+  r.readAsText(f);
+});
+document.getElementById('p-reset').addEventListener('click', () => {
+  cfg = defaultConfig(); writeConfigToDOM(); saveLocal();
+  if (trackMeta.length) populateTrackSelects();
+});
+
+/* ------------------------------------------------------------
+   RECORDING  (canvas video + Tone audio, real time)
+   ------------------------------------------------------------ */
+let recorder = null, chunks = [];
+const recBtn = document.getElementById('p-record');
+const recStatus = document.getElementById('rec-status');
+recBtn.addEventListener('click', () => {
+  if (recorder && recorder.state === 'recording') { recorder.stop(); return; }
+  try {
+    const vs = canvas.captureStream(60);
+    let tracks = vs.getVideoTracks();
+    try {
+      const raw = Tone.context.rawContext || Tone.context;
+      const dest = raw.createMediaStreamDestination();
+      Tone.getDestination().connect(dest);
+      tracks = tracks.concat(dest.stream.getAudioTracks());
+    } catch (e) { /* video only */ }
+    const stream = new MediaStream(tracks);
+    const mimes = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+    const mime = mimes.find(m => MediaRecorder.isTypeSupported(m)) || '';
+    recorder = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 12e6 } : undefined);
+    chunks = [];
+    recorder.ondataavailable = ev => { if (ev.data.size) chunks.push(ev.data); };
+    recorder.onstop = () => {
+      const blob = new Blob(chunks, { type: 'video/webm' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'mam-capture.webm';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      recBtn.classList.remove('active'); recBtn.textContent = '● Record';
+      recStatus.textContent = 'Saved mam-capture.webm';
+    };
+    recorder.start();
+    recBtn.classList.add('active'); recBtn.textContent = '■ Stop';
+    recStatus.textContent = 'Recording in real time…';
+  } catch (e) { recStatus.textContent = 'Recording unsupported: ' + e.message; }
+});
+
+/* ============================================================
+   RENDER LOOP
+   ============================================================ */
+function fmt(s) {
+  s = Math.max(0, s);
+  return String(Math.floor(s / 60)).padStart(2, '0') + ':' + (s % 60).toFixed(2).padStart(5, '0');
+}
+
+/* Trail decay expressed as a half-life in seconds so trail length
+   is identical at 30, 60 or 144 Hz. */
+function fadeAlpha(dt) {
+  const t = Math.min(1, cfg.trail * effectiveEnergy);
+  if (!isFinite(t) || t <= 0.001) return 1;
+  const halfLife = 0.01 + Math.pow(t, 2.2) * 1.4;
+  return 1 - Math.pow(0.5, dt / halfLife);
+}
+
+const timeDisplay = document.getElementById('time-display');
+
+/* ------------------------------------------------------------
+   CAPTURE & SYNC
+   Everything here exists to make an OBS take clean and alignable.
+   ------------------------------------------------------------ */
+const clockPanel  = document.getElementById('clock-panel');
+const routingSect = document.getElementById('routing-sect');
+const uiLayer     = document.getElementById('ui-layer');
+
+function bindHide(id, el) {
+  const box = document.getElementById(id);
+  const apply = () => { if (el) el.style.display = box.checked ? 'none' : ''; };
+  box.addEventListener('change', apply);
+  apply();
+}
+bindHide('hide-clock',  clockPanel);
+bindHide('hide-router', routingSect);
+
+document.getElementById('isolate-path').addEventListener('change', e => {
+  isolatePathMode = e.target.checked;
+  invalidateBlueprint();
+});
+document.getElementById('path-preview').addEventListener('change', e => {
+  pathPreviewOn = e.target.checked;
+  invalidateBlueprint();
+});
+document.getElementById('randomize-colors').addEventListener('click', randomizeColors);
+document.getElementById('json-upload').addEventListener('change', (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (file) loadEnergyJson(file);
+});
+
+document.addEventListener('keydown', e => {
+  if (e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
+  if (e.key === 'h' || e.key === 'H') {
+    allHidden = !allHidden;
+    uiLayer.style.display = allHidden ? 'none' : '';
+  }
+});
+
+/* Earliest note across every track actually routed to a shape. */
+function computeFirstNote() {
+  let best = Infinity;
+  for (const s_ of SHAPES) {
+    const sc = cfg.shapes[s_.id];
+    for (let li = 0; li < s_.lanes.length; li++) {
+      if (!sc.lanes[li].on) continue;
+      const src = resolveTrack(s_.id, li);
+      const arr = src >= 0 ? normTracks[src] : null;
+      if (arr && arr.length) best = Math.min(best, arr[0].time);
+    }
+  }
+  firstNote = isFinite(best) ? best : null;
+  if (cueBtn) cueBtn.disabled = firstNote === null;
+  return firstNote;
+}
+
+cueBtn.addEventListener('click', () => {
+  if (computeFirstNote() === null) return;
+  const target = Math.max(0, firstNote - 2);
+  Tone.Transport.seconds = target;
+  seekEl.value = songDuration ? target / songDuration : 0;
+  clearTrail();
+  lastFlashed = -1;
+});
+
+const timeNow = document.getElementById('time-now');
+const liveEnergyEl = document.getElementById('ro-liveenergy');
+const fpsEl = document.getElementById('fps');
+
+let lastFrame = performance.now();
+let fpsAcc = 0, fpsCount = 0, fpsTimer = 0;
+
+/* ============================================================
+   WISP PARTICLE SYSTEM
+   Now a flat struct-of-values pool. Particles are never drawn
+   individually — they are appended to the shared instance buffer
+   and rendered with everything else in one draw call.
+   ============================================================ */
+
+/* ------------------------------------------------------------
+   COMETS
+   Replaces the old outward wisp burst. A note that ends launches a
+   single head along its tangent. The head decelerates and fades,
+   and continuously sheds tail particles that stay where they were
+   born — so the tail is laid down BEHIND the head and matures as
+   the head pulls away. Newest tail material sits at the head; the
+   oldest, faintest material marks the tail's end.
+   ------------------------------------------------------------ */
+/* ------------------------------------------------------------
+   PATH TAIL  (replaces the free-flying comet)
+
+   The old comet spawned when a note ENDED and flew off along the
+   tangent, so it detached from the geometry and always read late.
+   This version is anchored to the shape: particles are positioned
+   with the shape's own place(), so they sit exactly ON the curve,
+   and slide backwards along the path parameter as they age.
+   Emission begins the instant a note sounds and stops on release,
+   so the tail is attached from frame one and dissipates shortly
+   after the note goes.
+   ------------------------------------------------------------ */
+/* ------------------------------------------------------------
+   NOTE TAPER  (replaces the drifting particle tail)
+
+   The tail is no longer a particle pool. It is drawn every frame as
+   a run of segments placed with the shape's own place(), directly
+   behind the note head, each one smaller and dimmer than the last.
+   That means it is welded to the note — it cannot drift, lag, or
+   detach — and it reads as a taper rather than a trail of dots.
+
+   Direction follows the melody: an ascending line tapers back down
+   the path, a descending line tapers back up it, so the taper always
+   sits in the note's wake.
+   ------------------------------------------------------------ */
+function emitTaper(shape, li, tt, sc, thickS, gc, life, dirSign, reflectMode, mgc) {
+  const amt = sc.wispLife || 0;              // TAIL LENGTH slider
+  if (amt <= 0.001 || dirSign === 0) return;
+  const norm = Math.min(1, amt / 6);         // scales across the slider's full 0-6 range now
+  const segs = Math.round(3 + 21 * norm);
+  const step = (0.0035 + 0.0150 * norm) * dirSign;
+  // Matches emitGlyph's own head-size formula exactly (including the same
+  // 1.9x that dot/circle-kind glyphs use) so the tail is always proportional
+  // to however thick the actual note head is currently rendering, whatever
+  // NOTE SHAPE is selected — otherwise a round note's tail reads thinner
+  // than its own head, like a fat note dragging a skinny thread behind it.
+  const noteKey = (sc && sc.noteShape) || (shape.glyph === 'dot' ? 'circle' : 'line');
+  const noteForm = NOTE_FORMS[noteKey] || NOTE_FORMS.line;
+  const baseR = (shape.half.thick || 4) * thickS * (noteForm.kind === 'bar' ? 1 : 1.9);
+  const mc = mgc || gc;
+
+  // Walks the tail as a sequence of points, then connects each consecutive
+  // pair with a thin bar instead of stamping a separate dot at each one —
+  // strung together, that reads as one continuous fading line rather than
+  // a string of discrete blobs.
+  let prev = null, prevF = 1, prevOK = false;
+  for (let k = 0; k <= segs; k++) {
+    const f = 1 - k / (segs + 1);            // 1 -> 0 taper
+    let et = tt - step * k;
+    if (shape.closed) et = ((et % 1) + 1) % 1;
+    else if (et < 0 || et > 1) { prevOK = false; continue; }  // open path: don't connect across the end
+
+    const p = placeAt(shape, et, li, geo, sc);
+    if (prevOK) {
+      const midF = (f + prevF) / 2;
+      const R = Math.max(0.5, baseR * midF * 0.95);
+      const dx = p.x - prev.x, dy = p.y - prev.y;
+      const dist = Math.hypot(dx, dy), hy = R * 0.55;
+      const angle = Math.atan2(dy, dx);
+      const a = life * midF * midF * 0.85;
+      push((prev.x + p.x) / 2, (prev.y + p.y) / 2, dist / 2, hy, angle,
+           Math.min(hy * 0.5, 2.0), R * 0.8, 0, gc[0], gc[1], gc[2], a, 1, 0, 0);
+      // mirrored copy, so an 'lr'/'radial' mirrored track carries its tail too
+      // (in its own MIRROR COLOR if one's set)
+      if (reflectMode) {
+        const m1 = mirrorPlacement(reflectMode, prev, geo), m2 = mirrorPlacement(reflectMode, p, geo);
+        if (m1 && m2) {
+          const mdx = m2.x - m1.x, mdy = m2.y - m1.y, mdist = Math.hypot(mdx, mdy);
+          push((m1.x + m2.x) / 2, (m1.y + m2.y) / 2, mdist / 2, hy, Math.atan2(mdy, mdx),
+               Math.min(hy * 0.5, 2.0), R * 0.8, 0, mc[0], mc[1], mc[2], a, 1, 0, 0);
+        }
+      }
+    }
+    prev = p; prevF = f; prevOK = true;
+  }
+}
+
+function spawnPetals(p, sc, velScale, inkColor) {
+  const amt = sc.petalAmt || 0;
+  if (amt <= 0.001 || petals.length >= petalCap) return;
+  const col   = rgb(inkColor);
+  const count = Math.max(1, Math.round(1 + 5 * amt * (0.5 + velScale * 0.5)));
+  for (let i = 0; i < count && petals.length < petalCap; i++) {
+    const a  = Math.random() * TAU;
+    const sp = 10 + Math.random() * 40 * amt;
+    const l  = (1.1 + 2.9 * amt) * (0.7 + Math.random() * 0.6);
+    petals.push({
+      x: p.x + (Math.random() - 0.5) * 7,
+      y: p.y + (Math.random() - 0.5) * 7,
+      vx: Math.cos(a) * sp,
+      vy: Math.sin(a) * sp - 14,          // slight initial lift before it falls
+      rot: Math.random() * TAU,
+      spin: (Math.random() - 0.5) * 3.2,
+      flut: Math.random() * TAU,
+      flutRate: 1.5 + Math.random() * 2.6,
+      sway: 9 + Math.random() * 28,
+      r: (2.4 + Math.random() * 3.0) * (0.7 + velScale * 0.5),
+      fall: (sc.petalFall !== undefined ? sc.petalFall : 55),
+      life: l, maxLife: l,
+      cr: col[0], cg: col[1], cb: col[2]
+    });
+  }
+}
+
+function tickPetals(dt) {
+  const n = petals.length;
+  if (!n) return;
+  const damp = Math.pow(0.55, dt);
+  let w = 0;
+  for (let i = 0; i < n; i++) {
+    const q = petals[i];
+    q.life -= dt;
+    if (q.life <= 0) continue;
+    q.flut += q.flutRate * dt;
+    q.x += (q.vx + Math.cos(q.flut) * q.sway) * dt;   // side-to-side flutter
+    q.y += q.vy * dt;
+    q.vx *= damp;
+    q.vy = Math.min(q.vy + q.fall * dt, 80);          // terminal velocity
+    q.rot += q.spin * dt;
+    const frac  = q.life / q.maxLife;
+    const edge  = 0.18 + 0.82 * Math.abs(Math.cos(q.flut * 0.7));  // turns edge-on
+    const R     = q.r * (0.65 + 0.35 * frac);
+    const alpha = Math.min(1, frac * 1.8) * 0.9;
+    push(q.x, q.y, R, R * edge, q.rot, 0, 0.8, 0,
+         q.cr, q.cg, q.cb, alpha, 0, 3, 1);           // form 3, n=1 => one petal
+    petals[w++] = q;
+  }
+  petals.length = w;
+}
+
+function spawnBloom(p, sc, tt, glowColor) {
+  const amt = sc.bloomAmt || 0;
+  if (amt <= 0.001 || blooms.length >= bloomCap) return;
+  const lowNorm = sc.revBass ? (1 - tt) : 0.5;
+  const w   = 0.40 + 0.60 * lowNorm;          // bass blooms bigger + longer
+  const col = rgb(glowColor);
+  const life = (0.55 + 1.7 * amt) * (0.6 + 0.7 * w);
+  blooms.push({
+    x: p.x, y: p.y,
+    life, maxLife: life,
+    r0: 5, r1: (55 + 330 * amt) * w,
+    amt,
+    cr: col[0], cg: col[1], cb: col[2]
+  });
+}
+
+function tickBlooms(dt) {
+  const n = blooms.length;
+  if (!n) return;
+  let w = 0;
+  for (let i = 0; i < n; i++) {
+    const b = blooms[i];
+    b.life -= dt;
+    if (b.life <= 0) continue;
+    const k    = 1 - b.life / b.maxLife;          // 0 -> 1 progress
+    const ease = 1 - Math.pow(1 - k, 2.2);        // quick burst, slow settle
+    const R    = b.r0 + (b.r1 - b.r0) * ease;
+    const fade = Math.pow(1 - k, 1.7);
+    // ring thins as it expands, so the energy visibly dissipates
+    const ring = Math.max(1.0, (9.0 * (1 - k) * (1 - k)) + 1.2);
+    push(b.x, b.y, R, R, 0, R, ring * 1.7, ring,
+         b.cr, b.cg, b.cb, fade * 0.60, 1, 0, 0);
+    // faint filled wash trailing the ring
+    push(b.x, b.y, R * 0.82, R * 0.82, 0, R * 0.82, R * 0.55, 0,
+         b.cr, b.cg, b.cb, fade * fade * 0.10 * b.amt, 1, 0, 0);
+    blooms[w++] = b;
+  }
+  blooms.length = w;
+}
+
+function spawnFirework(p, sc, velScale, glowColor) {
+  const amt = sc.fireworkAmt || 0;
+  if (amt <= 0.001 || fireworks.length >= fireworkCap) return;
+  const col = rgb(glowColor);
+  const count = Math.max(5, Math.round(6 + 16 * amt * (0.5 + velScale * 0.5)));
+  const life  = (0.30 + 0.55 * amt) * (0.7 + velScale * 0.5);
+  const baseA = Math.random() * TAU;   // random overall rotation so repeated notes don't look identical
+  for (let i = 0; i < count && fireworks.length < fireworkCap; i++) {
+    const a  = baseA + (i / count) * TAU + (Math.random() - 0.5) * 0.35;
+    const sp = (70 + Math.random() * 90) * (0.6 + amt * 0.7);
+    fireworks.push({
+      x: p.x, y: p.y,
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+      life, maxLife: life,
+      r: (2.2 + Math.random() * 2.4) * (0.7 + velScale * 0.5),
+      cr: col[0], cg: col[1], cb: col[2]
+    });
+  }
+}
+
+function tickFireworks(dt) {
+  const n = fireworks.length;
+  if (!n) return;
+  const drag = Math.pow(0.05, dt);   // heavy per-second drag -> pop, not drift
+  let w = 0;
+  for (let i = 0; i < n; i++) {
+    const f = fireworks[i];
+    f.life -= dt;
+    if (f.life <= 0) continue;
+    f.vx *= drag; f.vy *= drag;
+    f.vy += 55 * dt;                 // light gravity once the burst has spent itself
+    f.x += f.vx * dt; f.y += f.vy * dt;
+    const k = 1 - f.life / f.maxLife;
+    const alpha = Math.pow(1 - k, 1.6);
+    const R = f.r * (1 - k * 0.35);
+    push(f.x, f.y, R, R, 0, R, R * 0.7, 0, f.cr, f.cg, f.cb, alpha, 1, 0, 0);
+    fireworks[w++] = f;
+  }
+  fireworks.length = w;
+}
+
+/* ------------------------------------------------------------
+   SCREEN SHAKE
+   A single decaying magnitude, nudged up by strong low-register note
+   attacks (see the note-attack trigger in renderShapes) and applied
+   as a small CSS translate on the canvas each frame — a camera punch
+   rather than anything in the WebGL projection itself, which keeps
+   this fully independent of the rest of the rendering pipeline.
+   ------------------------------------------------------------ */
+let shakeAmt = 0;
+function triggerShake(strength) { shakeAmt = Math.min(40, shakeAmt + strength); }
+
+
+/* ============================================================
+   GLYPH EMISSION  (pushes instances; no immediate drawing)
+   ============================================================ */
+function emitGlyph(shape, p, lenS, thickS, ic, gc, alpha, glowAmt, sc) {
+  const key = (sc && sc.noteShape) || (shape.glyph === 'dot' ? 'circle' : 'line');
+  const f   = NOTE_FORMS[key] || NOTE_FORMS.line;
+  let hx, hy, round, ring = 0, form = f.form, n = f.n;
+
+  if (f.kind === 'bar') {
+    hx = shape.half.len * (shape.glyph === 'rung' ? 1 : lenS);
+    hy = shape.half.thick * thickS;
+    round = Math.min(hy * 0.5, 2.0);
+  } else {
+    // non-line glyphs get a radius derived from thickness so the existing
+    // NOTE THICKNESS + velocity scaling still drives their size
+    const R = Math.max(1.5, shape.half.thick * thickS * 1.9);
+    hx = hy = R;
+    if (form === 0) {
+      round = (f.kind === 'boxy') ? Math.min(2.5, R * 0.3) : R;
+    } else {
+      round = 0;
+    }
+    if (f.hollow) ring = Math.max(1.0, R * f.hollow);
+  }
+
+  if (glowAmt > 0.001) {
+    const gpad = 6.0 + 14.0 * glowAmt;
+    push(p.x, p.y, hx + gpad * 0.35, hy + gpad * 0.35, p.angle,
+         round, gpad, ring, gc[0], gc[1], gc[2], alpha * 0.5 * glowAmt, 1, form, n);
+  }
+  push(p.x, p.y, hx, hy, p.angle, round, 0.75, ring,
+       ic[0], ic[1], ic[2], alpha, 0, form, n);
+}
+
+/* ------------------------------------------------------------
+   VIBRATO
+   Displaces the glyph perpendicular to its path tangent on a sine,
+   so the note wobbles across the line it is riding rather than
+   along it. Each note gets a phase offset from its own pitch+time
+   so a chord swiggles as a texture instead of moving in lockstep.
+   ------------------------------------------------------------ */
+function applyVibrato(p, sc, t, seed) {
+  const amt = sc.vibAmt || 0;
+  if (amt <= 0.01) return p;
+  const rate  = sc.vibRate || 5;
+  const phase = (seed * 0.37) % 1;
+  const w = Math.sin((t * rate + phase) * TAU) * amt;
+  return { x: p.x - Math.sin(p.angle) * w,
+           y: p.y + Math.cos(p.angle) * w,
+           angle: p.angle };
+}
+
+/* ============================================================
+   PATH REVERB
+   Echoes are decaying copies of the glyph placed BACK along the
+   shape's own path, so a note smears in the direction it travels.
+   Closed loops wrap; open paths clamp so echoes don't teleport.
+   Bass weighting gives low notes longer, denser tails — the same
+   way low frequencies dominate a real reverb tail.
+   Cost is a few extra instances; the GPU draws them in the same
+   single call as everything else.
+   ============================================================ */
+function emitReverb(shape, li, tt, sc, lenS, thickS, ic, gc, life, glowAmt, reflectMode, mgc, laneDirSign) {
+  const amt = sc.revAmt || 0;
+  if (amt <= 0.001) return;
+  const mc = mgc || gc;
+  const dirSign = laneDirSign || 1;
+
+  // low notes -> longer tail. tt is normalised pitch (0 = lowest).
+  const lowNorm = sc.revBass ? (1 - tt) : 0.5;
+  const weight  = 0.35 + 0.65 * lowNorm;
+
+  // decay is capped at amt=1 worth (so it can never reach/exceed 1 and stop
+  // fading); taps/step keep scaling past that so the slider's full 0-2
+  // range still does something all the way up instead of going dead partway
+  const decayAmt = Math.min(1, amt);
+  const taps  = Math.min(16, Math.round(1 + 12 * amt * weight));
+  const step  = (0.008 + 0.045 * amt) * (0.6 + 0.8 * weight);
+  const decay = 0.50 + 0.42 * decayAmt;
+
+  let a = life;
+  for (let k = 1; k <= taps; k++) {
+    a *= decay;
+    if (a < 0.012) break;
+    // a Backward lane already re-maps which end is "low pitch" (tt is
+    // pre-flipped before this is called), so the echo trail direction
+    // flips too — otherwise every lane's echoes trail the same physical
+    // way regardless of orientation, and two voices end up trailing
+    // toward opposite semantic ends, which reads as asymmetric.
+    let et = tt - step * k * dirSign;
+    if (shape.closed) et = ((et % 1) + 1) % 1;      // wrap the loop
+    else if (et < 0 || et > 1) break;                // open path: stop at either end
+    const shrink = 1 - 0.045 * k;
+    if (shrink <= 0.15) break;
+    const p = placeAt(shape, et, li, geo, sc);
+    emitGlyph(shape, p, lenS * shrink, thickS * shrink, ic, gc, a, glowAmt * a, sc);
+    // mirrored copy, so an 'lr'/'radial' mirrored track also gets its echo trail
+    // (in its own MIRROR COLOR if one's set)
+    if (reflectMode) {
+      const m = mirrorPlacement(reflectMode, p, geo);
+      if (m) emitGlyph(shape, m, lenS * shrink, thickS * shrink, ic, mc, a, glowAmt * a, sc);
+    }
+  }
+}
+
+/* ============================================================
+   EQUALIZER BARS & VOICE CIRCLE
+   Both read a track's currently-active notes directly (no shape/
+   place() geometry involved) and bucket them into pitch bands, each
+   band's level easing toward its target — fast attack, slower release,
+   the same "VU meter" feel real equalizers have, so it doesn't just
+   snap on/off with each note. Bars draws that array linearly along the
+   bottom; the Voice Circle draws the same kind of array as radial
+   spikes around a center point — same underlying engine, two shapes,
+   because the underlying question ("how active is this pitch range
+   right now") is identical either way.
+   ============================================================ */
+function makeBandState(n) { return { heights: new Array(n).fill(0) }; }
+let eqState = makeBandState(24), voiceState = makeBandState(32);
+let bassOrbitState = makeScalarState(), subwaveState = makeScalarState();
+
+function updateBandState(state, trackSel, base, spread, t, dt) {
+  const bands = state.heights.length;
+  const targets = new Array(bands).fill(0);
+  const accumulate = (active) => {
+    for (let i = 0; i < active.length; i++) {
+      const n = active[i];
+      const age = t - n.time, dur = effDur(n);
+      const life = 1 - age / (dur + PAD);
+      if (life <= 0) continue;
+      const tt = (n.pitch - base) / spread;
+      if (tt < 0 || tt > 1) continue;
+      const band = Math.min(bands - 1, Math.floor(tt * bands));
+      const vel = n.velocity != null ? n.velocity : 0.7;
+      const val = vel * life;
+      if (val > targets[band]) targets[band] = val;
+    }
+  };
+  if (trackSel === 'all') {
+    for (let ti = 0; ti < normTracks.length; ti++) accumulate(getTrackActive(ti, t));
+  } else {
+    const idx = parseInt(trackSel, 10);
+    if (Number.isInteger(idx) && normTracks[idx]) accumulate(getTrackActive(idx, t));
+  }
+  for (let i = 0; i < bands; i++) {
+    const cur = state.heights[i], tgt = targets[i];
+    const rate = tgt > cur ? 20 : 4.5;   // fast attack, slower release
+    state.heights[i] = cur + (tgt - cur) * Math.min(1, rate * dt);
+  }
+}
+
+/* Same idea as updateBandState, but a single smoothed 0..1 value instead
+   of a per-band array — what Bass Orbit and Sub Waveform pulse from. */
+function makeScalarState() { return { value: 0 }; }
+function updateScalarState(state, trackSel, base, spread, t, dt) {
+  let target = 0;
+  const accumulate = (active) => {
+    for (let i = 0; i < active.length; i++) {
+      const n = active[i];
+      const age = t - n.time, dur = effDur(n);
+      const life = 1 - age / (dur + PAD);
+      if (life <= 0) continue;
+      const tt = (n.pitch - base) / spread;
+      if (tt < 0 || tt > 1) continue;
+      const vel = n.velocity != null ? n.velocity : 0.7;
+      const val = vel * life;
+      if (val > target) target = val;
+    }
+  };
+  if (trackSel === 'all') {
+    for (let ti = 0; ti < normTracks.length; ti++) accumulate(getTrackActive(ti, t));
+  } else {
+    const idx = parseInt(trackSel, 10);
+    if (Number.isInteger(idx) && normTracks[idx]) accumulate(getTrackActive(idx, t));
+  }
+  const rate = target > state.value ? 20 : 3.5;
+  state.value += (target - state.value) * Math.min(1, rate * dt);
+}
+
+function renderEqBars(t, dt) {
+  if (!cfg.eqOn) return;
+  updateBandState(eqState, cfg.eqTrack, cfg.eqBase, cfg.eqSpread, t, dt);
+  const col = rgb(cfg.eqColor);
+  const bands = eqState.heights.length;
+  const distX = cfg.eqDistX != null ? cfg.eqDistX : 1, distY = cfg.eqDistY != null ? cfg.eqDistY : 1;
+  const size  = cfg.eqSize  != null ? cfg.eqSize  : 1;
+  const offX  = cfg.eqOffX || 0, offY = cfg.eqOffY || 0;
+  const usableW = (geo.W - geo.W * 0.12) * distX;
+  const gap = usableW / bands * 0.22;
+  const barW = usableW / bands - gap;
+  const startX = geo.CX - usableW / 2 + offX;
+  const baseY = geo.H - geo.H * 0.05 + offY, maxH = geo.H * 0.32 * distY * size;
+  for (let i = 0; i < bands; i++) {
+    const h = Math.max(2, eqState.heights[i] * maxH);
+    const cx = startX + (i + 0.5) * (usableW / bands);
+    push(cx, baseY - h / 2, barW / 2, h / 2, 0, Math.min(barW * 0.3, 3), h * 0.4, 0,
+         col[0], col[1], col[2], 0.15 + 0.55 * eqState.heights[i], 1, 0, 0);
+    push(cx, baseY - h / 2, barW / 2, h / 2, 0, Math.min(barW * 0.3, 3), 1.2, 0,
+         col[0], col[1], col[2], 0.35 + 0.55 * eqState.heights[i], 0, 0, 0);
+  }
+}
+
+function renderVoiceCircle(t, dt) {
+  if (!cfg.voiceOn) return;
+  updateBandState(voiceState, cfg.voiceTrack, cfg.voiceBase, cfg.voiceSpread, t, dt);
+  const col = rgb(cfg.voiceColor);
+  const bands = voiceState.heights.length;
+  const distX = cfg.voiceDistX != null ? cfg.voiceDistX : 1, distY = cfg.voiceDistY != null ? cfg.voiceDistY : 1;
+  const size  = cfg.voiceSize  != null ? cfg.voiceSize  : 1;
+  const cx0 = geo.CX + (cfg.voiceOffX || 0), cy0 = geo.CY + (cfg.voiceOffY || 0);
+  const r0x = geo.core * 0.5 * distX, r0y = geo.core * 0.5 * distY;   // roughly the Green Ring's own radius, stretchable
+  const maxSpike = geo.core * 0.55 * size;
+  for (let i = 0; i < bands; i++) {
+    const a = (i / bands) * TAU - Math.PI / 2;
+    const len = voiceState.heights[i] * maxSpike;
+    const baseX = cx0 + r0x * Math.cos(a), baseYp = cy0 + r0y * Math.sin(a);
+    // outward direction along the ellipse's own normal, so spikes still
+    // point outward correctly even when Distort turns the circle oval
+    const dx = Math.cos(a) * distX, dy = Math.sin(a) * distY;
+    const dLen = Math.hypot(dx, dy) || 1, nx = dx / dLen, ny = dy / dLen;
+    const tipX = baseX + nx * Math.max(2, len), tipY = baseYp + ny * Math.max(2, len);
+    const mx = (baseX + tipX) / 2, my = (baseYp + tipY) / 2;
+    const hx = Math.hypot(tipX - baseX, tipY - baseYp) / 2;
+    const angle = Math.atan2(tipY - baseYp, tipX - baseX);
+    push(mx, my, hx, 2.6, angle, 1.5, 4, 0, col[0], col[1], col[2],
+         0.25 + 0.55 * voiceState.heights[i], 1, 0, 0);
+  }
+  // faint base ring so the circle reads even when the voice is silent
+  push(cx0, cy0, r0x, r0y, 0, Math.min(r0x, r0y), 2.5, 2.5,
+       col[0], col[1], col[2], 0.18, 1, 0, 0);
+}
+
+/* ============================================================
+   BASS VISUALIZERS
+   Two purpose-built shapes for low-register weight/impact — a slow
+   swelling ring and a thick undulating wave — driven by how loud/strong
+   the chosen track's currently-sounding low notes are right now,
+   smoothed for a fast-attack/slow-release "meter" feel rather than
+   snapping.
+   ============================================================ */
+function renderBassOrbit(t, dt) {
+  if (!cfg.orbitOn) return;
+  updateScalarState(bassOrbitState, cfg.orbitTrack, cfg.orbitBase, cfg.orbitSpread, t, dt);
+  const col = rgb(cfg.orbitColor);
+  const distX = cfg.orbitDistX != null ? cfg.orbitDistX : 1, distY = cfg.orbitDistY != null ? cfg.orbitDistY : 1;
+  const size = cfg.orbitSize != null ? cfg.orbitSize : 1;
+  const opacity = cfg.orbitOpacity != null ? cfg.orbitOpacity : 1;
+  const cx0 = geo.CX + (cfg.orbitOffX || 0), cy0 = geo.CY + (cfg.orbitOffY || 0);
+  const swell = bassOrbitState.value;
+  const baseR = Math.min(geo.W, geo.H) * 0.32 * size;   // deliberately much bigger than the Green Ring
+  const rx = (baseR + baseR * 0.35 * swell) * distX;
+  const ry = (baseR + baseR * 0.35 * swell) * distY;
+  const thickness = 6 + 14 * swell;
+  push(cx0, cy0, rx, ry, 0, Math.min(rx, ry), thickness, thickness,
+       col[0], col[1], col[2], (0.12 + 0.5 * swell) * opacity, 1, 0, 0);
+  // faint filled wash underneath for extra weight as it swells
+  push(cx0, cy0, rx * 0.9, ry * 0.9, 0, Math.min(rx, ry) * 0.9, ry * 0.35, 0,
+       col[0], col[1], col[2], (0.05 + 0.14 * swell * swell) * opacity, 1, 0, 0);
+}
+
+function renderSubWaveform(t, dt) {
+  if (!cfg.subwaveOn) return;
+  updateScalarState(subwaveState, cfg.subwaveTrack, cfg.subwaveBase, cfg.subwaveSpread, t, dt);
+  const col = rgb(cfg.subwaveColor);
+  const distX = cfg.subwaveDistX != null ? cfg.subwaveDistX : 1, distY = cfg.subwaveDistY != null ? cfg.subwaveDistY : 1;
+  const size = cfg.subwaveSize != null ? cfg.subwaveSize : 1;
+  const opacity = cfg.subwaveOpacity != null ? cfg.subwaveOpacity : 1;
+  const offX = cfg.subwaveOffX || 0, offY = cfg.subwaveOffY || 0;
+  const swell = subwaveState.value;
+  const amp = geo.H * 0.10 * size * (0.35 + 0.65 * swell) * distY;
+  const usableW = geo.W * 0.86 * distX;
+  const startX = geo.CX - usableW / 2 + offX, midY = geo.CY + offY;
+  const drift = t * 0.6;   // slow drift so it's not perfectly static even when the bass is silent
+  const segs = 60;
+  let prevX = null, prevY = null;
+  for (let i = 0; i <= segs; i++) {
+    const u = i / segs;
+    const x = startX + u * usableW;
+    const y = midY + Math.sin(u * 1.5 * TAU + drift) * amp;
+    if (prevX != null) {
+      const dx = x - prevX, dy = y - prevY, len = Math.hypot(dx, dy);
+      const thick = 3 + 9 * swell;
+      push((prevX + x) / 2, (prevY + y) / 2, len / 2, thick, Math.atan2(dy, dx),
+           thick * 0.5, thick * 1.4, 0, col[0], col[1], col[2], (0.25 + 0.55 * swell) * opacity, 1, 0, 0);
+    }
+    prevX = x; prevY = y;
+  }
+}
+
+/* Every shape's place() only ever sees a pitch-mapped 0..1 position — no
+   shape naturally "moves" over real time, which is why DNA's strands sat
+   still relative to each other instead of turning. This is set once per
+   frame and read by any shape's place() via closure (DNA does), the same
+   way applyVibrato already reads real elapsed time to animate position —
+   without touching the place()/placeAt() signature every shape relies on. */
+let currentPlaybackTime = 0;
+
+/* ============================================================
+   EXTERNAL RMS ENERGY (from a pre-extracted JSON: [{t, e}, ...])
+   getGlobalEnergy(t) binary-searches for the two frames bracketing t
+   and linearly interpolates. effectiveEnergy folds that live signal
+   into the ENERGY macro (cfg.energy) once per frame in animate(), and
+   every consumer that used to read cfg.energy directly (glow, trail,
+   note length/thickness, and now wisp cap) reads effectiveEnergy
+   instead — so loading a JSON makes the whole stage swell and drop
+   with the real mix on top of whatever baseline you've set manually.
+   ============================================================ */
+let audioEnergyData = null;   // [{t, e}, ...] sorted by t, or null if nothing loaded
+let effectiveEnergy = 1;      // cfg.energy * live audio multiplier, recomputed once per frame
+
+function getGlobalEnergy(t) {
+  const arr = audioEnergyData;
+  if (!arr || !arr.length) return 0;
+  if (t <= arr[0].t) return arr[0].e;
+  if (t >= arr[arr.length - 1].t) return arr[arr.length - 1].e;
+  let lo = 0, hi = arr.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (arr[mid].t <= t) lo = mid; else hi = mid;
+  }
+  const a = arr[lo], b = arr[hi];
+  const span = b.t - a.t;
+  const frac = span > 0 ? (t - a.t) / span : 0;
+  return a.e + (b.e - a.e) * frac;
+}
+
+function loadEnergyJson(file) {
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const parsed = JSON.parse(ev.target.result);
+      if (!Array.isArray(parsed) || !parsed.every(p => typeof p.t === 'number' && typeof p.e === 'number')) {
+        throw new Error('Expected an array of {t, e} objects');
+      }
+      parsed.sort((a, b) => a.t - b.t);   // defensive — getGlobalEnergy assumes sorted
+      audioEnergyData = parsed;
+      const status = document.getElementById('energy-json-status');
+      if (status) status.textContent = `Loaded ${parsed.length} frames (${parsed[0].t.toFixed(1)}s\u2013${parsed[parsed.length - 1].t.toFixed(1)}s)`;
+    } catch (err) {
+      const status = document.getElementById('energy-json-status');
+      if (status) status.textContent = 'Invalid file — expected [{"t":0.0,"e":0.0}, ...]';
+    }
+  };
+  reader.readAsText(file);
+}
+
+function renderShapes(t, frameDt) {
+  currentPlaybackTime = t;
+  const glowAmt = cfg.glow * effectiveEnergy;
+
+  for (const s of SHAPES) {
+    const sc = cfg.shapes[s.id];
+
+    for (let li = 0; li < s.lanes.length; li++) {
+      const lane = sc.lanes[li];
+      if (!lane.on) continue;
+      // each lane can carry its own glow AND ink color — so a lane's color
+      // swatch controls the whole note, not just its outer halo — and the
+      // mirrored/reflected copy inherits both unless MIRROR COLOR's "on"
+      // toggle is checked, in which case it uses its own glow instead
+      const laneCol = lane.color || sc.glow || s.glow;
+      const laneInk = lane.ink || sc.ink || s.ink;
+      const mirrorCol = (sc.mirrorColorOn && sc.mirrorGlow) ? sc.mirrorGlow : laneCol;
+      const gc  = rgb(laneCol);
+      const ic  = rgb(laneInk);
+      const mgc = rgb(mirrorCol);
+      const sn = getScanner(s.id, li, t);
+      const active = sn.active;
+      if (!active.length) continue;
+      const wisped = sn.wisped, started = sn.started;
+
+      for (let i = 0; i < active.length; i++) {
+        const n = active[i];
+        const age = t - n.time;
+        const dur = effDur(n);
+        const life = 1 - age / (dur + PAD);
+        if (life <= 0) continue;
+
+        const vs = 1 + cfg.vel * ((n.velocity != null ? n.velocity : 0.7) * 1.6 - 0.8);
+        let tt = (n.pitch - sc.base) / sc.spread;
+        tt = tt < 0 ? 0 : tt > 1 ? 1 : tt;
+        if (lane.dir === 'backward') tt = 1 - tt;
+
+        let p = placeAt(s, tt, li, geo, sc);
+        p = applyVibrato(p, sc, t, n.pitch + n.time);
+
+        // note attack: fires exactly once, the moment a note first becomes
+        // active — the firework burst and screen shake both key off this,
+        // same reliable one-shot pattern the note-end bloom/petals use
+        if (!started.has(n)) {
+          started.add(n);
+          spawnFirework(p, sc, vs, laneCol);
+          if (cfg.screenShake > 0.001) {
+            const vel = n.velocity != null ? n.velocity : 0.7;
+            const bassWeight = 1 - tt;                    // low notes hit harder
+            triggerShake(vel * vel * bassWeight * cfg.screenShake * 26);
+          }
+        }
+
+        if (age > dur && !wisped.has(n)) {
+          wisped.add(n);
+          spawnBloom(p, sc, tt, laneCol);
+          spawnPetals(p, sc, vs, laneInk);
+          if (sc.mirror !== 'none') {
+            if (sc.mirror === 'opp' && s.opp) {
+              const o = s.opp(tt, li);
+              spawnBloom(placeAt(s, o.t, o.lane, geo, sc), sc, o.t, mirrorCol);
+              spawnPetals(placeAt(s, o.t, o.lane, geo, sc), sc, vs, laneInk);
+            } else {
+              const m = mirrorPlacement(sc.mirror, p, geo);
+              if (m) { spawnBloom(m, sc, tt, mirrorCol);
+                       spawnPetals(m, sc, vs, laneInk); }
+            }
+          }
+        }
+
+        const lenScale = (sc.lenScale != null ? sc.lenScale : 1) * effectiveEnergy;
+        const thickScale = (sc.thickScale != null ? sc.thickScale : 1) * effectiveEnergy;
+        const lenS = cfg.len * vs * lenScale, thickS = cfg.thick * vs * thickScale;
+        const ga = glowAmt * life;
+        // point-reflected mirror modes ('lr'/'radial') can just flip each
+        // emitted point, so taper/reverb take it directly and draw both
+        // copies themselves. 'opp' mirrors in path-space instead (a
+        // different t/lane, not a point reflection) so it's handled below.
+        const reflectMode = (sc.mirror === 'lr' || sc.mirror === 'radial') ? sc.mirror : null;
+        const laneDirSign = lane.dir === 'backward' ? -1 : 1;
+        const dirSign = laneDirSign * (n.step || 0);
+
+        // taper first so the note head draws over it
+        emitTaper(s, li, tt, sc, thickS, gc, life, dirSign, reflectMode, mgc);
+        emitGlyph(s, p, lenS, thickS, ic, gc, life, ga, sc);
+        emitReverb(s, li, tt, sc, lenS, thickS, ic, gc, life, glowAmt, reflectMode, mgc, laneDirSign);
+
+        if (sc.mirror === 'opp' && s.opp) {
+          const o = s.opp(tt, li);
+          emitGlyph(s, placeAt(s, o.t, o.lane, geo, sc), lenS, thickS, ic, mgc, life, ga, sc);
+          emitReverb(s, o.lane, o.t, sc, lenS, thickS, ic, mgc, life, glowAmt, null, null, laneDirSign);
+          emitTaper(s, o.lane, o.t, sc, thickS, mgc, life, dirSign, null);
+        } else if (reflectMode) {
+          const m = mirrorPlacement(reflectMode, p, geo);
+          if (m) emitGlyph(s, m, lenS, thickS, ic, mgc, life, ga, sc);
+        }
+      }
+    }
+  }
+}
+
+/* ============================================================
+   GL PASSES
+   ============================================================ */
+function clearTrail() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, trailRT.fb);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.disable(gl.BLEND);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  blooms.length = 0;
+  petals.length = 0;
+  instCount = 0;
+}
+
+function flushInstances(targetFB, pw, ph) {
+  if (!instCount) return;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, targetFB);
+  gl.viewport(0, 0, pw, ph);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);              // additive, premultiplied
+  gl.useProgram(spriteProg);
+  gl.uniform2f(U_RES, W, H);
+  gl.bindVertexArray(spriteVAO);
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, instData, 0, instCount * FLOATS_PER);
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, instCount);
+  gl.bindVertexArray(null);
+  instCount = 0;
+}
+
+function fadeTrail(f, pw, ph) {
+  if (f >= 0.999) {                           // no trail: hard clear
+    gl.bindFramebuffer(gl.FRAMEBUFFER, trailRT.fb);
+    gl.viewport(0, 0, pw, ph);
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    return;
+  }
+  const keep = 1 - f;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, trailRT.fb);
+  gl.viewport(0, 0, pw, ph);
+  gl.enable(gl.BLEND);
+  gl.blendColor(keep, keep, keep, keep);
+  gl.blendFunc(gl.ZERO, gl.CONSTANT_COLOR);   // dst *= keep
+  gl.useProgram(solidProg);
+  gl.bindVertexArray(texVAO);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.bindVertexArray(null);
+}
+
+/* Both textures are premultiplied, so srcFactor is ONE either way. */
+function blit(tex, flip, additive) {
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, additive ? gl.ONE : gl.ONE_MINUS_SRC_ALPHA);
+  gl.useProgram(texProg);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.uniform1i(U_TEX, 0);
+  gl.uniform1f(U_FLIP, flip ? 1 : 0);
+  gl.bindVertexArray(texVAO);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.bindVertexArray(null);
+}
+
+function animate(now) {
+  requestAnimationFrame(animate);
+  const dt = Math.min(0.1, (now - lastFrame) / 1000) || 0.016;
+  lastFrame = now;
+
+  const playing = Tone.Transport.state === 'started';
+  const tRaw = Tone.Transport.seconds;
+  // visual offset shifts the picture against the transport so the first
+  // rendered note can be nudged onto the first attack of your audio
+  const t = tRaw + (cfg.offset || 0) / 1000;
+  const pw = canvas.width, ph = canvas.height;
+
+  // live audio energy folds into the ENERGY macro before anything reads it this frame
+  const audioMult = audioEnergyData ? (1 + getGlobalEnergy(t) * (cfg.audioEnergyGain != null ? cfg.audioEnergyGain : 10)) : 1;
+  effectiveEnergy = (cfg.energy != null ? cfg.energy : 1) * audioMult;
+  petalCap = Math.max(50, Math.round((cfg.wispcap || 900) * effectiveEnergy));
+  if (petals.length > petalCap) petals.length = petalCap;
+  if (liveEnergyEl) liveEnergyEl.textContent = effectiveEnergy.toFixed(2);
+
+  // 1. decay the persistent trail target
+  fadeTrail(fadeAlpha(dt), pw, ph);
+
+  // 2. accumulate this frame's notes into the trail target
+  if (parsedMidi) { renderShapes(t, dt); flushInstances(trailRT.fb, pw, ph); }
+
+  // 3. screen: background, blueprint, trail, then wisps on top
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, pw, ph);
+  const bg = rgb(BP.bg);
+  gl.disable(gl.BLEND);
+  gl.clearColor(bg[0], bg[1], bg[2], 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+
+  if (cfg.bp) { ensureBlueprintCache(); blit(bpTex, true, false); }
+  else if (pathPreviewOn && activeShapeId && routingSect.style.display !== 'none' && uiLayer.style.display !== 'none') {
+    ensurePreviewCache(); blit(previewTex, true, false);
+  }
+  blit(trailRT.tex, false, true);
+
+  // one-frame white flash exactly on the first note — an unmistakable
+  // alignment marker when scrubbing the recording next to the audio
+  const flashBox = document.getElementById('cue-flash');
+  if (flashBox && flashBox.checked && parsedMidi) {
+    if (firstNote === null) computeFirstNote();
+    if (firstNote !== null && t >= firstNote && lastFlashed < firstNote && t < firstNote + 0.2) {
+      lastFlashed = firstNote;
+      flashUntil = t + 0.033;
+    }
+    if (t < flashUntil) {
+      gl.disable(gl.BLEND);
+      gl.clearColor(1, 1, 1, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    }
+    if (t < firstNote - 0.05) lastFlashed = -1;   // re-arm after a seek back
+  }
+
+  tickBlooms(dt);
+  tickPetals(dt);
+  tickFireworks(dt);
+  if (parsedMidi) {
+    renderEqBars(t, dt); renderVoiceCircle(t, dt);
+    renderBassOrbit(t, dt); renderSubWaveform(t, dt);
+  }
+  flushInstances(null, pw, ph);
+
+  // screen shake: fast exponential decay, applied as a plain CSS offset
+  shakeAmt *= Math.pow(0.0004, dt);
+  if (shakeAmt > 0.05) {
+    const sx = (Math.random() - 0.5) * 2 * shakeAmt, sy = (Math.random() - 0.5) * 2 * shakeAmt;
+    canvas.style.transform = `translate(${sx.toFixed(1)}px, ${sy.toFixed(1)}px)`;
+  } else if (shakeAmt !== 0) {
+    shakeAmt = 0;
+    canvas.style.transform = '';
+  }
+
+  // UI
+  const label = fmt(tRaw);
+  timeDisplay.textContent = label;
+  timeNow.textContent = label;
+  if (!seeking && songDuration) seekEl.value = Math.min(1, t / songDuration);
+  if (playing && songDuration && t >= songDuration + 1.5) stopAll();
+
+  fpsAcc += 1 / dt; fpsCount++; fpsTimer += dt;
+  if (fpsTimer > 0.5) {
+    fpsEl.textContent = Math.round(fpsAcc / fpsCount) + ' fps · ' + (petals.length + fireworks.length) + ' particles';
+    fpsAcc = 0; fpsCount = 0; fpsTimer = 0;
+  }
+}
+
+/* EQ Bars and Voice Circle controls aren't per-shape, so they don't use
+   the data-cfg system — same 'input' applies live / 'change' also saves
+   pattern as everything else, just wired directly. Placed here (after
+   eqState/voiceState are declared) since it calls apply() immediately. */
+function bindEqControl(id, key) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const apply = () => {
+    const v = (el.type === 'checkbox') ? el.checked
+            : (el.type === 'range') ? parseFloat(el.value) : el.value;
+    cfg[key] = v;
+    if (key === 'eqBands') eqState = makeBandState(Math.max(1, Math.round(v)));
+    if (key === 'voiceBands') voiceState = makeBandState(Math.max(1, Math.round(v)));
+    if (el.dataset.readout) { const ro = document.getElementById(el.dataset.readout); if (ro) ro.textContent = el.value; }
+  };
+  apply();
+  el.addEventListener('input', () => { applySnap(el); apply(); });
+  el.addEventListener('change', () => { applySnap(el); apply(); saveLocal(); });
+  if (el.dataset.snapMid !== undefined) {
+    el.addEventListener('dblclick', () => { el.value = snapTarget(el); apply(); saveLocal(); });
+  }
+}
+[['eq-on', 'eqOn'], ['eq-track', 'eqTrack'], ['eq-bands', 'eqBands'], ['eq-color', 'eqColor'],
+ ['eq-base', 'eqBase'], ['eq-spread', 'eqSpread'],
+ ['eq-offx', 'eqOffX'], ['eq-offy', 'eqOffY'], ['eq-distx', 'eqDistX'], ['eq-disty', 'eqDistY'], ['eq-size', 'eqSize'],
+ ['voice-on', 'voiceOn'], ['voice-track', 'voiceTrack'], ['voice-bands', 'voiceBands'],
+ ['voice-color', 'voiceColor'], ['voice-base', 'voiceBase'], ['voice-spread', 'voiceSpread'],
+ ['voice-offx', 'voiceOffX'], ['voice-offy', 'voiceOffY'], ['voice-distx', 'voiceDistX'],
+ ['voice-disty', 'voiceDistY'], ['voice-size', 'voiceSize'],
+ ['orbit-on', 'orbitOn'], ['orbit-track', 'orbitTrack'], ['orbit-color', 'orbitColor'],
+ ['orbit-base', 'orbitBase'], ['orbit-spread', 'orbitSpread'],
+ ['orbit-offx', 'orbitOffX'], ['orbit-offy', 'orbitOffY'], ['orbit-distx', 'orbitDistX'],
+ ['orbit-disty', 'orbitDistY'], ['orbit-size', 'orbitSize'], ['orbit-opacity', 'orbitOpacity'],
+ ['subwave-on', 'subwaveOn'], ['subwave-track', 'subwaveTrack'], ['subwave-color', 'subwaveColor'],
+ ['subwave-base', 'subwaveBase'], ['subwave-spread', 'subwaveSpread'],
+ ['subwave-offx', 'subwaveOffX'], ['subwave-offy', 'subwaveOffY'], ['subwave-distx', 'subwaveDistX'],
+ ['subwave-disty', 'subwaveDistY'], ['subwave-size', 'subwaveSize'], ['subwave-opacity', 'subwaveOpacity']]
+  .forEach(([id, key]) => bindEqControl(id, key));
+
+loadLocal();
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
