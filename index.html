@@ -223,16 +223,16 @@
             <div class="mt-2">
               <span class="lbl text-fuchsia-400">BACKING DELAY <span class="text-gray-500">ms</span></span>
               <div class="flex items-center gap-2">
-                <input type="range" id="a-backingdelay" data-snap-mid="0" min="-5000" max="5000" step="0.5" value="0" class="flex-1">
-                <input type="number" data-num-for="a-backingdelay" min="-5000" max="5000" step="0.5" value="0" class="hex-input" style="width:74px;font-family:inherit;">
+                <input type="range" id="a-backingdelay" data-snap-mid="0" min="-2000" max="0" step="0.5" value="0" class="flex-1">
+                <input type="number" data-num-for="a-backingdelay" min="-2000" max="0" step="0.5" value="0" class="hex-input" style="width:74px;font-family:inherit;">
               </div>
-              <div class="text-[10px] text-gray-500">Type an exact value — steps of 0.5&nbsp;ms.</div>
+              <div class="text-[10px] text-gray-500">Drag for a rough value, type for an exact one.</div>
             </div>
             <div class="text-[10px] text-gray-500 mt-1 leading-snug">
               Plays the recording as the transport source; the DTW-aligned MIDI still drives the
-              geometry. <span class="text-fuchsia-300">Backing Delay</span> slides the recording later
-              (+, silence at the head — e.g. +1000 to start it a second in) or earlier (−) against the
-              MIDI, without re-aligning. Nudge the picture separately with
+              geometry. <span class="text-fuchsia-300">Backing Delay</span> starts the recording that
+              many ms into its own content (−1000 skips its first second), so you can trim leading
+              silence without re-aligning. Nudge the picture separately with
               <span class="text-emerald-400">Visual Offset</span> in Capture &amp; Session. The
               recording is included in Record captures.
             </div>
@@ -1550,7 +1550,11 @@ const PAD = 0.1;   // extra tail beyond note duration, as before
    when a DTW-synced MIDI resolves an alignment gap by stretching one
    note into a long drone instead of inserting a rest. */
 function effDur(n) {
-  return (cfg.maxHold > 0) ? Math.min(n.duration, cfg.maxHold) : n.duration;
+  const d = (cfg.maxHold > 0) ? Math.min(n.duration, cfg.maxHold) : n.duration;
+  // DTW-warped MIDI can collapse a note to zero (or sub-ms) length; Tone
+  // throws "duration must be greater than 0" from the synth callback on
+  // every one, which floods the console and stutters the audio thread.
+  return d > 0.005 ? d : 0.005;
 }
 
 function makeScanner(notes) {
@@ -1728,10 +1732,16 @@ function cancelCountdown() {
 }
 async function beginPlayback() {
   if (!audioReady) await buildAudio();
-  const at = Tone.Transport.seconds;
-  const startAt = Tone.now() + 0.05;   // schedule both on one clock time so they line up
-  Tone.Transport.start(startAt, at);
-  backingStartAt(startAt, at);
+  if (audioPlayer && backingLoaded) {
+    // a backing track has to line up with the transport sample-accurately,
+    // so schedule both at one shared clock time
+    const at = Tone.Transport.seconds;
+    const startAt = Tone.now();
+    Tone.Transport.start(startAt, at);
+    backingStartAt(startAt, at);
+  } else {
+    Tone.Transport.start();   // no backing track: start immediately, as before
+  }
   playBtn.textContent = 'Pause';
 }
 function startWithPreroll() {
