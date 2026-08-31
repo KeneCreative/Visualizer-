@@ -195,7 +195,24 @@
         <div id="audio-body" class="collapsed">
           <div class="mt-2"><span class="lbl">MASTER VOLUME</span>
             <input type="range" id="a-vol" data-snap-mid="0" min="-48" max="6" step="1" value="-12"></div>
-          <div id="mixer-list" class="mt-2 text-xs text-gray-400">Load a MIDI file.</div>
+
+          <div class="mt-3">
+            <span class="lbl text-fuchsia-400">BACKING TRACK (real recording)</span>
+            <input type="file" id="audio-upload" accept="audio/*" class="text-[10px] text-gray-400">
+            <div id="audio-file-status" class="text-[10px] text-gray-500 mt-1">No backing track — synth only.</div>
+            <label class="flex items-center gap-2 text-xs text-gray-300 cursor-pointer mt-2">
+              <input type="checkbox" id="mute-synth" checked> Mute synth while backing track is loaded
+            </label>
+            <div class="mt-2"><span class="lbl">BACKING LEVEL <span class="text-gray-300 font-mono" id="ro-backing">0</span></span>
+              <input type="range" id="a-backing" data-readout="ro-backing" data-snap-mid="0" min="-48" max="6" step="1" value="0"></div>
+            <div class="text-[10px] text-gray-500 mt-1 leading-snug">
+              Plays the recording as the transport source; the DTW-aligned MIDI still drives the
+              geometry. Nudge picture vs. sound with <span class="text-emerald-400">Visual Offset</span>
+              in Capture &amp; Session. The recording is included in Record captures.
+            </div>
+          </div>
+
+          <div id="mixer-list" class="mt-3 text-xs text-gray-400">Load a MIDI file.</div>
         </div>
       </div>
 
@@ -845,6 +862,7 @@ function placeAt(shape, t, li, g, sc) {
    ============================================================ */
 function defaultConfig() {
   const c = { bp: true, trail: 0.55, len: 2, thick: 2, vel: 0.5, glow: 1, vol: -12,
+              backingVol: 0, muteSynth: true,
               rscale: 1, wispcap: 900, offset: 0, maxHold: 0, preroll: 3, energy: 1, screenShake: 0, audioEnergyGain: 10,
               eqOn: false, eqTrack: 'all', eqBands: 24, eqColor: '#00e5ff', eqBase: 24, eqSpread: 84,
               eqOffX: 0, eqOffY: 0, eqDistX: 1, eqDistY: 1, eqSize: 1,
@@ -1586,12 +1604,31 @@ let masterVol = null;
 let trackGains = [];
 let audioReady = false;
 
+/* ---- backing track (the real recording) ----
+   Kept as a decoded buffer so it survives audio rebuilds (new MIDI, preset
+   reset). Not synced to the Transport — that path mishandles mid-playback
+   seeks in this Tone version — so start/stop/seek are driven explicitly
+   alongside the Transport, which shares the same AudioContext clock and so
+   stays sample-aligned once both are running. */
+let backingBuffer = null;   // Tone.ToneAudioBuffer of the loaded recording
+let backingURL    = null;   // object URL to revoke on replace
+let backingLoaded = false;
+let audioPlayer   = null;   // Tone.Player, rebuilt by buildAudio()
+let backingVol    = null;   // Tone.Volume for the recording
+let synthBus      = null;   // one node between every track gain and masterVol, for the synth-mute toggle
+
+function synthShouldMute() { return backingLoaded && cfg.muteSynth !== false; }
+function applySynthMute() {
+  if (synthBus) synthBus.gain.rampTo(synthShouldMute() ? 0 : 1, 0.1);
+}
+
 async function buildAudio() {
   await Tone.start();
   disposeAudio();
   masterVol = new Tone.Volume(cfg.vol).toDestination();
+  synthBus  = new Tone.Gain(1).connect(masterVol);
   parsedMidi.tracks.forEach((tr, i) => {
-    const gain = new Tone.Gain(cfg.mutes[i] ? 0 : 1).connect(masterVol);
+    const gain = new Tone.Gain(cfg.mutes[i] ? 0 : 1).connect(synthBus);
     const synth = new Tone.PolySynth(Tone.Synth, { maxPolyphony: 32 }).connect(gain);
     trackGains[i] = gain;
     if (!tr.notes.length) return;
@@ -1601,14 +1638,47 @@ async function buildAudio() {
     part.start(0);
     parts.push({ part, synth, gain });
   });
+  if (backingBuffer) {
+    backingVol  = new Tone.Volume(cfg.backingVol != null ? cfg.backingVol : 0).connect(masterVol);
+    audioPlayer = new Tone.Player(backingBuffer).connect(backingVol);
+  }
+  applySynthMute();
   audioReady = true;
 }
 function disposeAudio() {
   parts.forEach(p => { try { p.part.dispose(); p.synth.dispose(); p.gain.dispose(); } catch (e) {} });
   parts = []; trackGains = [];
+  if (audioPlayer) { try { audioPlayer.stop(); audioPlayer.dispose(); } catch (e) {} audioPlayer = null; }
+  if (backingVol)  { try { backingVol.dispose(); } catch (e) {} backingVol = null; }
+  if (synthBus)    { try { synthBus.dispose(); } catch (e) {} synthBus = null; }
   if (masterVol) { try { masterVol.dispose(); } catch (e) {} masterVol = null; }
   Tone.Transport.cancel();
   audioReady = false;
+}
+
+/* Start/stop the recording in lockstep with the Transport. */
+function backingStart(atTime, offset) {
+  if (!audioPlayer || !backingLoaded) return;
+  if (offset >= audioPlayer.buffer.duration) return;
+  try { audioPlayer.start(atTime, offset); } catch (e) {}
+}
+function backingStop() {
+  if (audioPlayer) { try { audioPlayer.stop(); } catch (e) {} }
+}
+let backingSeekTimer = null;
+function backingSeek() {
+  if (!audioPlayer || !backingLoaded) return;
+  clearTimeout(backingSeekTimer);
+  backingSeekTimer = setTimeout(() => {
+    const at = Tone.Transport.seconds;
+    try {
+      if (Tone.Transport.state === 'started' && at < audioPlayer.buffer.duration) {
+        audioPlayer.restart(undefined, at);
+      } else {
+        audioPlayer.stop();
+      }
+    } catch (e) {}
+  }, 60);
 }
 
 const playBtn = document.getElementById('play-btn');
@@ -1624,7 +1694,10 @@ function cancelCountdown() {
 }
 async function beginPlayback() {
   if (!audioReady) await buildAudio();
-  Tone.Transport.start();
+  const at = Tone.Transport.seconds;
+  const startAt = Tone.now() + 0.05;   // schedule both on one clock time so they line up
+  Tone.Transport.start(startAt, at);
+  backingStart(startAt, at);
   playBtn.textContent = 'Pause';
 }
 function startWithPreroll() {
@@ -1653,6 +1726,7 @@ async function togglePlay() {
   if (countdownTimer) { cancelCountdown(); playBtn.textContent = 'Play'; return; }  // cancel a pending pre-roll
   if (Tone.Transport.state === 'started') {
     Tone.Transport.pause();
+    backingStop();
     playBtn.textContent = 'Play';
   } else {
     startWithPreroll();
@@ -1662,6 +1736,7 @@ function stopAll() {
   cancelCountdown();
   Tone.Transport.stop();
   Tone.Transport.seconds = 0;
+  backingStop();
   parts.forEach(p => { try { p.synth.releaseAll(); } catch (e) {} });
   resetScanners();
   clearTrail();
@@ -1675,14 +1750,15 @@ seekEl.addEventListener('input', () => {
   seeking = true;
   Tone.Transport.seconds = parseFloat(seekEl.value) * songDuration;
   clearTrail();
+  backingSeek();
 });
 seekEl.addEventListener('change', () => { seeking = false; });
 
 window.addEventListener('keydown', e => {
   if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
-  else if (e.code === 'ArrowRight') Tone.Transport.seconds = Math.min(songDuration, Tone.Transport.seconds + 5);
-  else if (e.code === 'ArrowLeft') Tone.Transport.seconds = Math.max(0, Tone.Transport.seconds - 5);
+  else if (e.code === 'ArrowRight') { Tone.Transport.seconds = Math.min(songDuration, Tone.Transport.seconds + 5); backingSeek(); }
+  else if (e.code === 'ArrowLeft') { Tone.Transport.seconds = Math.max(0, Tone.Transport.seconds - 5); backingSeek(); }
   else if (e.code === 'Escape') stopAll();
 });
 
@@ -2279,7 +2355,7 @@ function bindControls() {
 }
 /* globals */
 const G = [['g-bp', 'bp'], ['g-trail', 'trail'], ['g-len', 'len'], ['g-thick', 'thick'],
-           ['g-vel', 'vel'], ['g-glow', 'glow'], ['a-vol', 'vol'],
+           ['g-vel', 'vel'], ['g-glow', 'glow'], ['a-vol', 'vol'], ['a-backing', 'backingVol'],
            ['g-rscale', 'rscale'], ['g-wispcap', 'wispcap'], ['g-offset', 'offset'],
            ['g-maxhold', 'maxHold'], ['g-preroll', 'preroll'], ['g-energy', 'energy'],
            ['g-screenshake', 'screenShake'], ['g-audiogain', 'audioEnergyGain']];
@@ -2288,6 +2364,7 @@ G.forEach(([id, key]) => {
   const read = () => {
     cfg[key] = key === 'bp' ? n.value === '1' : parseFloat(n.value);
     if (key === 'vol' && masterVol) masterVol.volume.rampTo(cfg.vol, 0.05);
+    if (key === 'backingVol' && backingVol) backingVol.volume.rampTo(cfg.backingVol, 0.05);
     if (key === 'rscale') resize();
     if (key === 'wispcap') { petalCap = cfg.wispcap; if (petals.length > petalCap) petals.length = petalCap; }
     if (key === 'offset') { const el = document.getElementById('offset-read');
@@ -2381,6 +2458,9 @@ function writeConfigToDOM() {
     const lane0 = cfg.shapes[s.id] && cfg.shapes[s.id].lanes && cfg.shapes[s.id].lanes[0];
     if (dot) dot.style.background = (lane0 && lane0.color) || s.glow;
   });
+  const muteSynthEl = document.getElementById('mute-synth');
+  if (muteSynthEl) muteSynthEl.checked = cfg.muteSynth !== false;
+  if (typeof applySynthMute === 'function') applySynthMute();
   if (typeof refreshHideButtons === 'function') refreshHideButtons();
   if (typeof refreshTabTrackHighlights === 'function') refreshTabTrackHighlights();
   // EQ Bars / Voice Circle controls aren't [data-cfg] elements (checkbox,
@@ -2557,6 +2637,44 @@ document.getElementById('json-upload').addEventListener('change', (e) => {
   if (file) loadEnergyJson(file);
 });
 
+const audioFileStatus = document.getElementById('audio-file-status');
+document.getElementById('audio-upload').addEventListener('change', async (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  audioFileStatus.textContent = 'Decoding…';
+  try {
+    await Tone.start();
+    if (backingURL) URL.revokeObjectURL(backingURL);
+    backingURL = URL.createObjectURL(file);
+    backingBuffer = await new Tone.ToneAudioBuffer().load(backingURL);
+    backingLoaded = true;
+    audioFileStatus.textContent = `${file.name} — ${fmt(backingBuffer.duration)}`;
+    // let the recording run past the MIDI's end if it's longer
+    if (backingBuffer.duration > songDuration) {
+      songDuration = backingBuffer.duration;
+      document.getElementById('time-total').textContent = fmt(songDuration);
+    }
+    const wasPlaying = Tone.Transport.state === 'started';
+    const at = Tone.Transport.seconds;
+    if (wasPlaying) Tone.Transport.pause();
+    await buildAudio();                     // rewire with the new player
+    if (wasPlaying) {
+      const startAt = Tone.now() + 0.05;
+      Tone.Transport.start(startAt, at);
+      backingStart(startAt, at);
+    }
+  } catch (err) {
+    backingLoaded = false;
+    audioFileStatus.textContent = 'Could not decode that audio file.';
+  }
+});
+
+document.getElementById('mute-synth').addEventListener('change', (e) => {
+  cfg.muteSynth = e.target.checked;
+  applySynthMute();
+  saveLocal();
+});
+
 document.addEventListener('keydown', e => {
   if (e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
   if (e.key === 'h' || e.key === 'H') {
@@ -2588,6 +2706,7 @@ cueBtn.addEventListener('click', () => {
   Tone.Transport.seconds = target;
   seekEl.value = songDuration ? target / songDuration : 0;
   clearTrail();
+  backingSeek();
   lastFlashed = -1;
 });
 

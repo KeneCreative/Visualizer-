@@ -30,10 +30,16 @@ then visit http://localhost:8000/
 
 1. DTW-align the MIDI to the target recording (`Music SYnc/syncscript.py`).
 2. Extract RMS energy from the recording (`Music RMS for vizualizer/`).
-3. Load both into the visualizer, route tracks onto shapes, tune the panel.
+3. In the visualizer: load the MIDI, the energy JSON, and — under **Audio Mixer**
+   — the recording itself as the **Backing Track**. Route tracks onto shapes and
+   tune the panel. The aligned MIDI drives the geometry; the recording is the
+   transport audio and is included in Record captures. Use **Visual Offset**
+   (Capture & Session) to fine-tune picture vs. sound.
 4. Capture (in-app **Record**, or the pre-roll countdown into OBS).
-5. Lay the real recording over the captured video in an editor, using the
-   one-frame sync flash on the first note to line it up.
+
+The older path — render with the synth as a scratch track and lay the recording
+over the video in an editor using the one-frame sync flash — still works if you
+leave the Backing Track empty.
 
 ## Dependencies
 
