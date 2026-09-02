@@ -37,7 +37,10 @@ then visit http://localhost:8000/
    (Capture & Session) to fine-tune picture vs. sound, and **Backing Delay**
    (Audio Mixer) to slide the recording itself. By default the RMS energy reacts
    stage-wide; set **AUDIO ENERGY → APPLIES TO** to a single path to scope it.
-4. Capture (in-app **Record**, or the pre-roll countdown into OBS).
+4. Pick a **Frame / Aspect** (Capture & Session) — Fill window, or a fixed
+   9:16 / 4:5 / 1:1 / 16:9 stage for social video. Then capture (in-app
+   **Record**, or the pre-roll countdown into OBS). Fullscreen a large
+   monitor before recording a vertical frame so it renders at a useful size.
 
 The older path — render with the synth as a scratch track and lay the recording
 over the video in an editor using the one-frame sync flash — still works if you
