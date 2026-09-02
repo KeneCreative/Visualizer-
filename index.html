@@ -848,6 +848,9 @@ const SHAPE_BY_ID = Object.fromEntries(SHAPES.map(s => [s.id, s]));
 /* form: 0 rounded-box, 1 polygon, 2 star, 3 flower.  n = sides/points/petals */
 const NOTE_FORMS = {
   line:     { form: 0, n: 0, kind: 'bar'    },
+  streak:   { form: 0, n: 0, kind: 'bar', soft: 3.0 },   // a bar with soft, feathered ends
+  comet:    { form: 4, n: 0, kind: 'bar'   },            // round head + tapered tail, along the path
+  blade:    { form: 5, n: 0, kind: 'bar'   },            // pointed at both ends (a lens / leaf)
   circle:   { form: 0, n: 0, kind: 'round'  },
   ring:     { form: 0, n: 0, kind: 'round', hollow: 0.30 },
   square:   { form: 0, n: 0, kind: 'boxy'   },
@@ -862,7 +865,8 @@ const NOTE_FORMS = {
   starburst:{ form: 2, n: 8, hollow: 0.22 }
 };
 const NOTE_SHAPE_LABEL = {
-  line: 'Line / Bar', circle: 'Circle', ring: 'Ring', square: 'Square',
+  line: 'Line / Bar', streak: 'Streak (soft ends)', comet: 'Comet (head + tail)',
+  blade: 'Blade (pointed ends)', circle: 'Circle', ring: 'Ring', square: 'Square',
   triangle: 'Triangle', diamond: 'Diamond', pentagon: 'Pentagon', hexagon: 'Hexagon',
   star: 'Star (5)', star6: 'Star (6)', flower: 'Flower', petal: 'Petal',
   starburst: 'Starburst'
@@ -927,7 +931,7 @@ function defaultConfig() {
       mirrorGlow: s.glow, mirrorColorOn: false,
       mirrorMode: (s.id === 'ladder' || s.id === 'barc' || s.id === 'dna') ? 'lr' : 'opp',
       twistSpeed: (s.twistSpeed != null ? s.twistSpeed : 0),
-      wispLife: 0.9,
+      wispLife: 0.9, tailStyle: 'taper',
       revAmt: 0, revBass: true, bloomAmt: 0, fireworkAmt: 0,
       noteShape: 'line', vibAmt: 0, vibRate: 5,
       petalAmt: 0, petalFall: 55,
@@ -1059,16 +1063,37 @@ float sdPolar(vec2 p, float R, float n, float form) {
   }
   return r - R * (0.55 + 0.45 * cos(n * a));
 }
+/* Line-family glyphs, oriented along local +x (the path tangent).
+     form 4 = comet   — round head toward +x, tapering to a point toward -x
+     form 5 = blade   — a lens, pointed at both ends                        */
+float sdComet(vec2 p, vec2 h) {
+  vec2  hc   = vec2(max(0.0, h.x - h.y), 0.0);        // head centre, just inside +x
+  float head = length(p - hc) - h.y;
+  float t    = clamp((p.x + h.x) / (hc.x + h.x + 1e-4), 0.0, 1.0);
+  float w    = h.y * sqrt(t);                          // tail half-width, 0 at the tip
+  float tail = max(abs(p.y) - w, p.x - hc.x);
+  tail = max(tail, -h.x - p.x);
+  return min(head, tail);
+}
+float sdBlade(vec2 p, vec2 h) {
+  float t = clamp(abs(p.x) / max(h.x, 1e-4), 0.0, 1.0);
+  float w = h.y * (1.0 - t * t);                       // parabola -> points at ±h.x
+  return max(abs(p.y) - w, abs(p.x) - h.x);
+}
 void main() {
   float d;
   if (v_form.x < 0.5) {
     d = sdRoundBox(v_local, v_half, v_round);
-  } else {
+  } else if (v_form.x < 3.5) {
     // anisotropic polar: evaluate in un-squashed space so half.y < half.x
     // yields a flattened form. half.x == half.y keeps the old behaviour.
     float R = max(v_half.x, 0.001);
     float e = clamp(v_half.y / R, 0.15, 1.0);
     d = sdPolar(vec2(v_local.x, v_local.y / e), R, v_form.y, v_form.x) * e;
+  } else if (v_form.x < 4.5) {
+    d = sdComet(v_local, v_half);
+  } else {
+    d = sdBlade(v_local, v_half);
   }
   if (v_ring > 0.0) d = abs(d) - v_ring;      // filled shape -> outline
   float a = 1.0 - smoothstep(-v_soft, v_soft, d);
@@ -1221,7 +1246,7 @@ function ensurePreviewCache() {
 
 /* ------------------------------------------------------------
    REVERB BLOOM
-   A note leaves an expanding ring that radiates outward in every
+   On a note's ATTACK, an expanding ring radiates outward in every
    direction and fades — the spatial wash of a reverb rather than
    the directional tail of Path Reverb. Expansion eases out (fast
    at first, then slowing) and the ring thins as it grows, which
@@ -1997,6 +2022,13 @@ function buildShapeSections() {
         <div><span class="lbl">TAIL LENGTH <span class="text-gray-300 font-mono" id="ro-wispLife-${s.id}">0.9</span></span>
           <input type="range" data-cfg="shape.${s.id}.wispLife" data-readout="ro-wispLife-${s.id}" data-snap-mid="0" min="0" max="6" step="0.05" value="0.9"
             title="Length of the taper behind each note — 0 disables it"></div>
+        <div><span class="lbl">TAIL STYLE</span>
+          <select data-cfg="shape.${s.id}.tailStyle" title="How the tail behind each note is drawn">
+            <option value="taper">Taper — smooth fade</option>
+            <option value="comet">Comet — thick at the head</option>
+            <option value="dashed">Dashed</option>
+            <option value="dots">Dots</option>
+          </select></div>
         <div class="col-span-2"><span class="lbl text-lime-400">NOTE SHAPE</span>
           <select data-cfg="shape.${s.id}.noteShape">${shapeOpts}</select></div>
         <div><span class="lbl text-lime-400">VIBRATO</span>
@@ -2016,10 +2048,10 @@ function buildShapeSections() {
             title="Decaying echoes back along this shape's path"></div>
         <div class="col-span-2"><span class="lbl text-sky-400">REVERB BLOOM</span>
           <input type="range" data-cfg="shape.${s.id}.bloomAmt" data-snap-mid="0" min="0" max="1" step="0.01" value="0"
-            title="Expanding ring that radiates outward and fades — triggers on note END"></div>
+            title="Expanding ring that radiates outward and fades — triggers on note ATTACK"></div>
         <div class="col-span-2"><span class="lbl text-amber-400">FIREWORK BLOOM</span>
           <input type="range" data-cfg="shape.${s.id}.fireworkAmt" data-snap-mid="0" min="0" max="1" step="0.01" value="0"
-            title="Sparks burst outward radially the instant a note starts — triggers on note ATTACK, the opposite moment from Reverb Bloom"></div>
+            title="Sparks burst outward radially the instant a note starts — also on note ATTACK, alongside Reverb Bloom"></div>
         <div><span class="lbl text-fuchsia-400">BASS WEIGHT</span>
           <label class="flex items-center gap-1 mt-1 cursor-pointer">
             <input type="checkbox" data-cfg="shape.${s.id}.revBass" checked>
@@ -2939,6 +2971,7 @@ let fpsAcc = 0, fpsCount = 0, fpsTimer = 0;
 function emitTaper(shape, li, tt, sc, thickS, gc, life, dirSign, reflectMode, mgc) {
   const amt = sc.wispLife || 0;              // TAIL LENGTH slider
   if (amt <= 0.001 || dirSign === 0) return;
+  const style = sc.tailStyle || 'taper';    // TAIL STYLE selector
   const norm = Math.min(1, amt / 6);         // scales across the slider's full 0-6 range now
   const segs = Math.round(3 + 21 * norm);
   const step = (0.0035 + 0.0150 * norm) * dirSign;
@@ -2952,19 +2985,42 @@ function emitTaper(shape, li, tt, sc, thickS, gc, life, dirSign, reflectMode, mg
   const baseR = (shape.half.thick || 4) * thickS * (noteForm.kind === 'bar' ? 1 : 1.9);
   const mc = mgc || gc;
 
-  // Walks the tail as a sequence of points, then connects each consecutive
-  // pair with a thin bar instead of stamping a separate dot at each one —
-  // strung together, that reads as one continuous fading line rather than
-  // a string of discrete blobs.
+  // DOTS: a string of discrete shrinking blobs rather than a joined line.
+  if (style === 'dots') {
+    for (let k = 1; k <= segs; k++) {
+      const f = 1 - k / (segs + 1);
+      let et = tt - step * k;
+      if (shape.closed) et = ((et % 1) + 1) % 1;
+      else if (et < 0 || et > 1) continue;
+      const p = placeAt(shape, et, li, geo, sc);
+      const R = Math.max(0.6, baseR * f * 0.9);
+      const a = life * f * f * 0.9;
+      push(p.x, p.y, R, R, 0, R, R * 0.8, 0, gc[0], gc[1], gc[2], a, 1, 0, 0);
+      if (reflectMode) {
+        const m = mirrorPlacement(reflectMode, p, geo);
+        if (m) push(m.x, m.y, R, R, 0, R, R * 0.8, 0, mc[0], mc[1], mc[2], a, 1, 0, 0);
+      }
+    }
+    return;
+  }
+
+  // Connected-line styles. Walk the tail as a sequence of points and join
+  // each consecutive pair with a thin bar, so it reads as one continuous
+  // line rather than a string of blobs.
+  //   taper  — even fade front to back
+  //   comet  — weight (width + alpha) pushed toward the head, thin fast
+  //   dashed — every other link left out
   let prev = null, prevF = 1, prevOK = false;
   for (let k = 0; k <= segs; k++) {
-    const f = 1 - k / (segs + 1);            // 1 -> 0 taper
+    let f = 1 - k / (segs + 1);              // 1 -> 0 taper
+    if (style === 'comet') f *= f;           // front-loaded
     let et = tt - step * k;
     if (shape.closed) et = ((et % 1) + 1) % 1;
     else if (et < 0 || et > 1) { prevOK = false; continue; }  // open path: don't connect across the end
 
     const p = placeAt(shape, et, li, geo, sc);
-    if (prevOK) {
+    const gap = (style === 'dashed') && (k % 2 === 0);
+    if (prevOK && !gap) {
       const midF = (f + prevF) / 2;
       const R = Math.max(0.5, baseR * midF * 0.95);
       const dx = p.x - prev.x, dy = p.y - prev.y;
@@ -3146,6 +3202,9 @@ function emitGlyph(shape, p, lenS, thickS, ic, gc, alpha, glowAmt, sc) {
     hx = shape.half.len * (shape.glyph === 'rung' ? 1 : lenS);
     hy = shape.half.thick * thickS;
     round = Math.min(hy * 0.5, 2.0);
+    // comet/blade are much more readable when they're clearly elongated,
+    // so give the line-family SDFs a longer default reach than a plain bar
+    if (form === 4 || form === 5) hx *= 2.2;
   } else {
     // non-line glyphs get a radius derived from thickness so the existing
     // NOTE THICKNESS + velocity scaling still drives their size
@@ -3164,7 +3223,7 @@ function emitGlyph(shape, p, lenS, thickS, ic, gc, alpha, glowAmt, sc) {
     push(p.x, p.y, hx + gpad * 0.35, hy + gpad * 0.35, p.angle,
          round, gpad, ring, gc[0], gc[1], gc[2], alpha * 0.5 * glowAmt, 1, form, n);
   }
-  push(p.x, p.y, hx, hy, p.angle, round, 0.75, ring,
+  push(p.x, p.y, hx, hy, p.angle, round, f.soft || 0.75, ring,
        ic[0], ic[1], ic[2], alpha, 0, form, n);
 }
 
@@ -3542,11 +3601,22 @@ function renderShapes(t, frameDt) {
         p = applyVibrato(p, sc, t, n.pitch + n.time);
 
         // note attack: fires exactly once, the moment a note first becomes
-        // active — the firework burst and screen shake both key off this,
-        // same reliable one-shot pattern the note-end bloom/petals use
+        // active. Firework burst, screen shake AND the reverb bloom all key
+        // off this now — the bloom reads as the note's energy radiating out
+        // as it sounds, not as an afterthought once it's already released.
         if (!started.has(n)) {
           started.add(n);
           spawnFirework(p, sc, vs, laneCol);
+          spawnBloom(p, sc, tt, laneCol);
+          if (sc.mirror !== 'none') {
+            if (sc.mirror === 'opp' && s.opp) {
+              const o = s.opp(tt, li);
+              spawnBloom(placeAt(s, o.t, o.lane, geo, sc), sc, o.t, mirrorCol);
+            } else {
+              const m = mirrorPlacement(sc.mirror, p, geo);
+              if (m) spawnBloom(m, sc, tt, mirrorCol);
+            }
+          }
           if (cfg.screenShake > 0.001) {
             const vel = n.velocity != null ? n.velocity : 0.7;
             const bassWeight = 1 - tt;                    // low notes hit harder
@@ -3554,19 +3624,17 @@ function renderShapes(t, frameDt) {
           }
         }
 
+        // note end: petals shed as the note dies away
         if (age > dur && !wisped.has(n)) {
           wisped.add(n);
-          spawnBloom(p, sc, tt, laneCol);
           spawnPetals(p, sc, vs, laneInk);
           if (sc.mirror !== 'none') {
             if (sc.mirror === 'opp' && s.opp) {
               const o = s.opp(tt, li);
-              spawnBloom(placeAt(s, o.t, o.lane, geo, sc), sc, o.t, mirrorCol);
               spawnPetals(placeAt(s, o.t, o.lane, geo, sc), sc, vs, laneInk);
             } else {
               const m = mirrorPlacement(sc.mirror, p, geo);
-              if (m) { spawnBloom(m, sc, tt, mirrorCol);
-                       spawnPetals(m, sc, vs, laneInk); }
+              if (m) spawnPetals(m, sc, vs, laneInk);
             }
           }
         }
