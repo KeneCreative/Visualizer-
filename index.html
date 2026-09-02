@@ -8,8 +8,11 @@
 <script src="vendor/tone.js"></script>
 <script src="vendor/midi.js"></script>
 <style>
-  body, html { margin:0; padding:0; width:100%; height:100%; overflow:hidden; background:#050508; font-family:'Inter',system-ui,sans-serif; color:#e5e7eb; }
-  canvas#stage { display:block; width:100%; height:100%; }
+  body, html { margin:0; padding:0; width:100%; height:100%; overflow:hidden; background:#000; font-family:'Inter',system-ui,sans-serif; color:#e5e7eb; }
+  /* absolutely centred so a fixed aspect frame letterboxes cleanly against
+     the black body; resize() sets the explicit width/height in px. The
+     screen-shake code owns `transform`, so centring is done with margins. */
+  canvas#stage { display:block; position:absolute; inset:0; margin:auto; }
   #countdown-overlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
     pointer-events:none; font-size:min(22vw,22vh); font-weight:800; color:#00ffaa;
     font-family:'Inter',system-ui,sans-serif; text-shadow:0 0 40px rgba(0,255,170,.8), 0 0 100px rgba(0,255,170,.5); }
@@ -397,7 +400,23 @@
           <span class="text-xs text-cyan-400 font-mono toggle-icon">[+]</span>
         </div>
         <div id="capture-body" class="collapsed">
-          <div class="grid grid-cols-2 gap-2 mt-2">
+          <div class="mt-2">
+            <span class="lbl text-emerald-400">FRAME / ASPECT</span>
+            <select id="g-frame">
+              <option value="fill">Fill window</option>
+              <option value="9x16">9:16 vertical — Reels / TikTok / Shorts</option>
+              <option value="4x5">4:5 portrait — Instagram feed</option>
+              <option value="1x1">1:1 square</option>
+              <option value="16x9">16:9 landscape — YouTube</option>
+            </select>
+            <div class="text-[10px] text-gray-500 mt-1 leading-snug">
+              Anything but "Fill window" pins the stage to that shape, centred, with black
+              bars around it — and <span class="text-rose-300">Record</span> captures exactly
+              that box. Make the browser window tall (or fullscreen it) so the vertical frame
+              renders big.
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-2 mt-3">
             <label class="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
               <input type="checkbox" id="hide-clock"> Hide clock
             </label>
@@ -889,6 +908,7 @@ function placeAt(shape, t, li, g, sc) {
 function defaultConfig() {
   const c = { bp: true, trail: 0.55, len: 2, thick: 2, vel: 0.5, glow: 1, vol: -12,
               backingVol: 0, muteSynth: true, backingDelay: 0,
+              frame: 'fill',
               rscale: 1, wispcap: 900, offset: 0, maxHold: 0, preroll: 3, energy: 1, screenShake: 0, audioEnergyGain: 10, audioEnergyTargets: 'all',
               eqOn: false, eqTrack: 'all', eqBands: 24, eqColor: '#00e5ff', eqBase: 24, eqSpread: 84,
               eqOffX: 0, eqOffY: 0, eqDistX: 1, eqDistY: 1, eqSize: 1,
@@ -1267,10 +1287,23 @@ function rgb(hex) {
   return v;
 }
 
+/* Output aspect ratios. null = fill the whole window (the original
+   behaviour). A fixed ratio fits the largest box of that shape inside the
+   window and centres it; the black body letterboxes the rest, and the
+   Record capture is exactly that box — so a phone-shaped stage records as
+   a phone-shaped video. */
+const FRAME_AR = { fill: null, '9x16': 9 / 16, '4x5': 4 / 5, '1x1': 1, '16x9': 16 / 9 };
+
 function resize() {
   const rs = (cfg && isFinite(cfg.rscale)) ? cfg.rscale : 1;
   DPR = Math.min(window.devicePixelRatio || 1, 2) * rs;
-  W = window.innerWidth; H = window.innerHeight;
+  const ar = FRAME_AR[cfg && cfg.frame] || null;
+  let vw = window.innerWidth, vh = window.innerHeight;
+  if (ar) {
+    if (vw / vh > ar) vw = Math.round(vh * ar);   // window wider than target -> bound by height
+    else              vh = Math.round(vw / ar);   // window taller -> bound by width
+  }
+  W = vw; H = vh;
   CX = W / 2; CY = H / 2;
   const pw = Math.round(W * DPR), ph = Math.round(H * DPR);
   canvas.width = pw; canvas.height = ph;
@@ -2452,17 +2485,20 @@ function bindControls() {
 /* globals */
 const G = [['g-bp', 'bp'], ['g-trail', 'trail'], ['g-len', 'len'], ['g-thick', 'thick'],
            ['g-vel', 'vel'], ['g-glow', 'glow'], ['a-vol', 'vol'], ['a-backing', 'backingVol'],
-           ['a-backingdelay', 'backingDelay'],
+           ['a-backingdelay', 'backingDelay'], ['g-frame', 'frame'],
            ['g-rscale', 'rscale'], ['g-wispcap', 'wispcap'], ['g-offset', 'offset'],
            ['g-maxhold', 'maxHold'], ['g-preroll', 'preroll'], ['g-energy', 'energy'],
            ['g-screenshake', 'screenShake'], ['g-audiogain', 'audioEnergyGain']];
 G.forEach(([id, key]) => {
   const n = document.getElementById(id);
   const read = () => {
-    cfg[key] = key === 'bp' ? n.value === '1' : parseFloat(n.value);
+    cfg[key] = key === 'bp' ? n.value === '1'
+             : key === 'frame' ? n.value
+             : parseFloat(n.value);
     if (key === 'vol' && masterVol) masterVol.volume.rampTo(cfg.vol, 0.05);
     if (key === 'backingVol' && backingVol) backingVol.volume.rampTo(cfg.backingVol, 0.05);
     if (key === 'backingDelay') backingSeek();   // re-place the recording live if it's playing
+    if (key === 'frame') resize();
     if (key === 'rscale') resize();
     if (key === 'wispcap') { petalCap = cfg.wispcap; if (petals.length > petalCap) petals.length = petalCap; }
     if (key === 'offset') { const el = document.getElementById('offset-read');
@@ -2618,6 +2654,7 @@ function writeConfigToDOM() {
     if (cfg.eqBands) eqState = makeBandState(Math.max(1, Math.round(cfg.eqBands)));
     if (cfg.voiceBands) voiceState = makeBandState(Math.max(1, Math.round(cfg.voiceBands)));
   }
+  if (typeof resize === 'function') resize();   // a preset may carry a different FRAME / RENDER SCALE
   resetScanners();
 }
 function saveLocal() { try { localStorage.setItem('mam-preset', JSON.stringify(cfg)); } catch (e) {} }
@@ -2651,6 +2688,7 @@ function repairConfig(c) {
     c.audioEnergyTargets = c.audioEnergyTargets.filter(id => SHAPE_BY_ID[id]);
     if (!c.audioEnergyTargets.length) c.audioEnergyTargets = 'all';
   }
+  if (!Object.prototype.hasOwnProperty.call(FRAME_AR, c.frame)) c.frame = 'fill';
   return c;
 }
 
