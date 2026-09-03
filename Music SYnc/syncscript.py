@@ -61,9 +61,9 @@ def align_midi_to_audio(audio_path, midi_path, output_path, start_time=0.0, clip
 # --- EXECUTION EXAMPLE ---
 if __name__ == "__main__":
     align_midi_to_audio(
-        audio_path='Beethoven, String Quartet op.130 4thMVMT.wav',  # <-- Audio recording here
-        midi_path='Beethoven4thMVMT.mid',                            # <-- MIDI file here
-        output_path='Beethoven13m4aligned.mid',
+        audio_path='Violin Concerto No. 1 in A Minor, BWV 1041_ I. —.wav',  # <-- Audio recording here
+        midi_path='bwv1041a.mid',                                               # <-- MIDI file here
+        output_path='BachViolinConcerto1041_1_aligned.mid',
         start_time=0.0,
         clip_duration=None
     )
