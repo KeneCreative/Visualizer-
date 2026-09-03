@@ -935,7 +935,7 @@ function defaultConfig() {
       revAmt: 0, revBass: true, bloomAmt: 0, fireworkAmt: 0,
       noteShape: 'line', vibAmt: 0, vibRate: 5,
       petalAmt: 0, petalFall: 55,
-      lanes: s.lanes.map((ln, i) => ({ on: true, track: 'shared', dir: 'forward',
+      lanes: s.lanes.map((ln, i) => ({ on: true, track: 'shared', dir: 'forward', noteShape: 'shared',
         color: (s.laneColors && s.laneColors[i]) || s.glow, ink: s.ink }))
     };
   });
@@ -1942,6 +1942,19 @@ function buildShapeSections() {
     }
     const shapeOpts = Object.keys(NOTE_SHAPE_LABEL).map(k =>
       `<option value="${k}"${(s.glyph === 'dot' ? 'circle' : 'line') === k ? ' selected' : ''}>${NOTE_SHAPE_LABEL[k]}</option>`).join('');
+    const laneShapeOpts = '<option value="shared">Path default</option>' +
+      Object.keys(NOTE_SHAPE_LABEL).map(k => `<option value="${k}">${NOTE_SHAPE_LABEL[k]}</option>`).join('');
+    const perLaneShapes = s.lanes.length > 1 ? `
+      <div class="col-span-3 mt-1">
+        <span class="lbl text-lime-400">PER-LANE NOTE SHAPE — override the one above for individual voices</span>
+        <div class="grid grid-cols-2 gap-x-2 gap-y-1 mt-1">
+          ${s.lanes.map((ln, li) => `
+            <label class="text-[10px] text-gray-400 flex flex-col gap-0.5 min-w-0">
+              <span class="truncate">${escapeHtml(ln.label)}</span>
+              <select data-cfg="lane.${s.id}.${li}.noteShape">${laneShapeOpts}</select>
+            </label>`).join('')}
+        </div>
+      </div>` : '';
     const hasMirrorLane = s.lanes.some(l => l.id === 'mirror') || s.usesMirrorMode === true;
     const hasTwist = s.twistSpeed !== undefined;
     return `
@@ -2031,6 +2044,7 @@ function buildShapeSections() {
           </select></div>
         <div class="col-span-2"><span class="lbl text-lime-400">NOTE SHAPE</span>
           <select data-cfg="shape.${s.id}.noteShape">${shapeOpts}</select></div>
+        ${perLaneShapes}
         <div><span class="lbl text-lime-400">VIBRATO</span>
           <input type="range" data-cfg="shape.${s.id}.vibAmt" data-snap-mid="0" min="0" max="40" step="0.5" value="0"
             title="Swiggle depth in pixels"></div>
@@ -2704,6 +2718,10 @@ function repairConfig(c) {
     if (!cur) { c.shapes[s.id] = d; return; }
     if (!Array.isArray(cur.lanes) || cur.lanes.length !== s.lanes.length) {
       cur.lanes = d.lanes.map((dl, i) => Object.assign({}, dl, cur.lanes && cur.lanes[i]));
+    } else {
+      // backfill lane keys added in newer versions (e.g. noteShape) without
+      // disturbing anything the preset already set
+      cur.lanes = cur.lanes.map((cl, i) => Object.assign({}, d.lanes[i], cl));
     }
     if (!s.mirrors.includes(cur.mirror)) cur.mirror = d.mirror;
   });
@@ -2968,7 +2986,7 @@ let fpsAcc = 0, fpsCount = 0, fpsTimer = 0;
    the path, a descending line tapers back up it, so the taper always
    sits in the note's wake.
    ------------------------------------------------------------ */
-function emitTaper(shape, li, tt, sc, thickS, gc, life, dirSign, reflectMode, mgc) {
+function emitTaper(shape, li, tt, sc, thickS, gc, life, dirSign, reflectMode, mgc, noteKey) {
   const amt = sc.wispLife || 0;              // TAIL LENGTH slider
   if (amt <= 0.001 || dirSign === 0) return;
   const style = sc.tailStyle || 'taper';    // TAIL STYLE selector
@@ -2980,8 +2998,8 @@ function emitTaper(shape, li, tt, sc, thickS, gc, life, dirSign, reflectMode, mg
   // to however thick the actual note head is currently rendering, whatever
   // NOTE SHAPE is selected — otherwise a round note's tail reads thinner
   // than its own head, like a fat note dragging a skinny thread behind it.
-  const noteKey = (sc && sc.noteShape) || (shape.glyph === 'dot' ? 'circle' : 'line');
-  const noteForm = NOTE_FORMS[noteKey] || NOTE_FORMS.line;
+  const nk = noteKey || (sc && sc.noteShape) || (shape.glyph === 'dot' ? 'circle' : 'line');
+  const noteForm = NOTE_FORMS[nk] || NOTE_FORMS.line;
   const baseR = (shape.half.thick || 4) * thickS * (noteForm.kind === 'bar' ? 1 : 1.9);
   const mc = mgc || gc;
 
@@ -3193,8 +3211,8 @@ function triggerShake(strength) { shakeAmt = Math.min(40, shakeAmt + strength); 
 /* ============================================================
    GLYPH EMISSION  (pushes instances; no immediate drawing)
    ============================================================ */
-function emitGlyph(shape, p, lenS, thickS, ic, gc, alpha, glowAmt, sc) {
-  const key = (sc && sc.noteShape) || (shape.glyph === 'dot' ? 'circle' : 'line');
+function emitGlyph(shape, p, lenS, thickS, ic, gc, alpha, glowAmt, sc, noteKey) {
+  const key = noteKey || (sc && sc.noteShape) || (shape.glyph === 'dot' ? 'circle' : 'line');
   const f   = NOTE_FORMS[key] || NOTE_FORMS.line;
   let hx, hy, round, ring = 0, form = f.form, n = f.n;
 
@@ -3255,7 +3273,7 @@ function applyVibrato(p, sc, t, seed) {
    Cost is a few extra instances; the GPU draws them in the same
    single call as everything else.
    ============================================================ */
-function emitReverb(shape, li, tt, sc, lenS, thickS, ic, gc, life, glowAmt, reflectMode, mgc, laneDirSign) {
+function emitReverb(shape, li, tt, sc, lenS, thickS, ic, gc, life, glowAmt, reflectMode, mgc, laneDirSign, noteKey) {
   const amt = sc.revAmt || 0;
   if (amt <= 0.001) return;
   const mc = mgc || gc;
@@ -3288,12 +3306,12 @@ function emitReverb(shape, li, tt, sc, lenS, thickS, ic, gc, life, glowAmt, refl
     const shrink = 1 - 0.045 * k;
     if (shrink <= 0.15) break;
     const p = placeAt(shape, et, li, geo, sc);
-    emitGlyph(shape, p, lenS * shrink, thickS * shrink, ic, gc, a, glowAmt * a, sc);
+    emitGlyph(shape, p, lenS * shrink, thickS * shrink, ic, gc, a, glowAmt * a, sc, noteKey);
     // mirrored copy, so an 'lr'/'radial' mirrored track also gets its echo trail
     // (in its own MIRROR COLOR if one's set)
     if (reflectMode) {
       const m = mirrorPlacement(reflectMode, p, geo);
-      if (m) emitGlyph(shape, m, lenS * shrink, thickS * shrink, ic, mc, a, glowAmt * a, sc);
+      if (m) emitGlyph(shape, m, lenS * shrink, thickS * shrink, ic, mc, a, glowAmt * a, sc, noteKey);
     }
   }
 }
@@ -3651,19 +3669,26 @@ function renderShapes(t, frameDt) {
         const laneDirSign = lane.dir === 'backward' ? -1 : 1;
         const dirSign = laneDirSign * (n.step || 0);
 
+        // each lane can carry its own NOTE SHAPE ('shared' defers to the
+        // path's) — so the two strands of a helix (or any multi-lane path)
+        // can draw as different glyphs
+        const laneShapeKey = (lane.noteShape && lane.noteShape !== 'shared')
+          ? lane.noteShape
+          : (sc.noteShape || (s.glyph === 'dot' ? 'circle' : 'line'));
+
         // taper first so the note head draws over it
-        emitTaper(s, li, tt, sc, thickS, gc, life, dirSign, reflectMode, mgc);
-        emitGlyph(s, p, lenS, thickS, ic, gc, life, ga, sc);
-        emitReverb(s, li, tt, sc, lenS, thickS, ic, gc, life, glowAmt, reflectMode, mgc, laneDirSign);
+        emitTaper(s, li, tt, sc, thickS, gc, life, dirSign, reflectMode, mgc, laneShapeKey);
+        emitGlyph(s, p, lenS, thickS, ic, gc, life, ga, sc, laneShapeKey);
+        emitReverb(s, li, tt, sc, lenS, thickS, ic, gc, life, glowAmt, reflectMode, mgc, laneDirSign, laneShapeKey);
 
         if (sc.mirror === 'opp' && s.opp) {
           const o = s.opp(tt, li);
-          emitGlyph(s, placeAt(s, o.t, o.lane, geo, sc), lenS, thickS, ic, mgc, life, ga, sc);
-          emitReverb(s, o.lane, o.t, sc, lenS, thickS, ic, mgc, life, glowAmt, null, null, laneDirSign);
-          emitTaper(s, o.lane, o.t, sc, thickS, mgc, life, dirSign, null);
+          emitGlyph(s, placeAt(s, o.t, o.lane, geo, sc), lenS, thickS, ic, mgc, life, ga, sc, laneShapeKey);
+          emitReverb(s, o.lane, o.t, sc, lenS, thickS, ic, mgc, life, glowAmt, null, null, laneDirSign, laneShapeKey);
+          emitTaper(s, o.lane, o.t, sc, thickS, mgc, life, dirSign, null, laneShapeKey);
         } else if (reflectMode) {
           const m = mirrorPlacement(reflectMode, p, geo);
-          if (m) emitGlyph(s, m, lenS, thickS, ic, mgc, life, ga, sc);
+          if (m) emitGlyph(s, m, lenS, thickS, ic, mgc, life, ga, sc, laneShapeKey);
         }
       }
     }
