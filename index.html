@@ -96,11 +96,31 @@
     font-size:.6rem; line-height:1; padding:3px 5px; cursor:pointer; flex:0 0 auto; }
   .leg-ed-btn:hover:not(:disabled) { background:rgba(255,255,255,.18); color:#fff; }
   .leg-ed-btn:disabled { opacity:.3; cursor:default; }
+
+  /* Composition guides — a DOM overlay sized to match the stage, so it
+     never lands in a Record capture (that only grabs the canvas buffer). */
+  #center-guides { position:absolute; inset:0; margin:auto; pointer-events:none; display:none; z-index:8; }
+  #center-guides.on { display:block; }
+  .cg-v { position:absolute; top:0; bottom:0; width:1px; }
+  .cg-h { position:absolute; left:0; right:0; height:1px; }
+  .cg-mid { background:rgba(0,229,255,.55); box-shadow:0 0 3px rgba(0,229,255,.4); }
+  .cg-third { background:rgba(255,255,255,.13); }
+  .cg-dot { position:absolute; left:50%; top:50%; width:7px; height:7px; margin:-3.5px 0 0 -3.5px;
+    border:1px solid rgba(0,229,255,.7); border-radius:50%; }
 </style>
 </head>
 <body>
 
 <canvas id="stage"></canvas>
+<div id="center-guides">
+  <div class="cg-v cg-third" style="left:33.333%"></div>
+  <div class="cg-v cg-third" style="left:66.667%"></div>
+  <div class="cg-h cg-third" style="top:33.333%"></div>
+  <div class="cg-h cg-third" style="top:66.667%"></div>
+  <div class="cg-v cg-mid" style="left:50%"></div>
+  <div class="cg-h cg-mid" style="top:50%"></div>
+  <div class="cg-dot"></div>
+</div>
 <div id="countdown-overlay"></div>
 
 <div id="legend-overlay">
@@ -489,6 +509,10 @@
             </label>
             <label class="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
               <input type="checkbox" id="hide-router"> Hide router
+            </label>
+            <label class="flex items-center gap-2 text-xs text-gray-300 cursor-pointer col-span-2">
+              <input type="checkbox" id="center-guides-on"> Center guides &mdash; centre cross + thirds
+              (<span class="text-cyan-400 font-mono">G</span> toggles; never recorded)
             </label>
           </div>
           <div class="text-[10px] text-gray-500 mt-2 leading-snug">
@@ -1020,7 +1044,7 @@ function defaultConfig() {
               subwaveOn: false, subwaveTrack: 'all', subwaveColor: '#ff5500', subwaveBase: 21, subwaveSpread: 33,
               subwaveOffX: 0, subwaveOffY: 0, subwaveDistX: 1, subwaveDistY: 1, subwaveSize: 1, subwaveOpacity: 1,
               legendOrder: [], legendLabels: {}, legendHidden: {},
-              mode: 'free', lockLow: 36, lockHigh: 96,
+              mode: 'free', lockLow: 36, lockHigh: 96, guides: false,
               shapes: {}, mutes: {} };
   SHAPES.forEach(s => {
     c.shapes[s.id] = {
@@ -1434,6 +1458,8 @@ function resize() {
   canvas.width = pw; canvas.height = ph;
   canvas.style.width = W + 'px';
   canvas.style.height = H + 'px';
+  const cg = document.getElementById('center-guides');
+  if (cg) { cg.style.width = W + 'px'; cg.style.height = H + 'px'; }
   gl.bindTexture(gl.TEXTURE_2D, trailRT.tex);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, pw, ph, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
   geo.W = W; geo.H = H; geo.CX = CX; geo.CY = CY;
@@ -2916,6 +2942,7 @@ function writeConfigToDOM() {
     if (cfg.voiceBands) voiceState = makeBandState(Math.max(1, Math.round(cfg.voiceBands)));
   }
   if (typeof resize === 'function') resize();   // a preset may carry a different FRAME / RENDER SCALE
+  if (typeof applyGuides === 'function') applyGuides();
   resetScanners();
 }
 function saveLocal() { try { localStorage.setItem('mam-preset', JSON.stringify(cfg)); } catch (e) {} }
@@ -3141,6 +3168,17 @@ document.getElementById('mute-synth').addEventListener('change', (e) => {
   saveLocal();
 });
 
+/* Composition guides overlay */
+const centerGuides = document.getElementById('center-guides');
+const centerGuidesBox = document.getElementById('center-guides-on');
+function applyGuides() {
+  centerGuides.classList.toggle('on', !!cfg.guides);
+  if (centerGuidesBox) centerGuidesBox.checked = !!cfg.guides;
+}
+function toggleGuides() { cfg.guides = !cfg.guides; applyGuides(); saveLocal(); }
+if (centerGuidesBox) centerGuidesBox.addEventListener('change', () => { cfg.guides = centerGuidesBox.checked; applyGuides(); saveLocal(); });
+applyGuides();   // reflect whatever loadLocal() restored
+
 document.addEventListener('keydown', e => {
   if (e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
   if (e.key === 'h' || e.key === 'H') {
@@ -3148,6 +3186,8 @@ document.addEventListener('keydown', e => {
     uiLayer.style.display = allHidden ? 'none' : '';
   } else if (e.key === 'l' || e.key === 'L') {
     legendOverlay.classList.contains('open') ? hideLegend() : showLegend();
+  } else if (e.key === 'g' || e.key === 'G') {
+    toggleGuides();
   }
 });
 
