@@ -86,6 +86,16 @@
     box-shadow:0 0 10px currentColor, inset 0 0 0 1px rgba(255,255,255,.25); }
   .legend-name { font-size:.98rem; color:#f3f4f6; font-weight:600; white-space:nowrap; }
   .legend-empty { font-size:.85rem; color:#9ca3af; }
+  .leg-ed-row { display:flex; align-items:center; gap:4px; margin-top:4px; }
+  .leg-ed-row.leg-ed-off { opacity:.45; }
+  .leg-ed-sw { width:12px; height:12px; border-radius:3px; flex:0 0 auto; border:1px solid rgba(255,255,255,.3); }
+  .leg-ed-name { flex:1 1 auto; min-width:0; background:rgba(0,0,0,.5); border:1px solid #555; color:#fff;
+    border-radius:4px; padding:2px 5px; font-size:.72rem; outline:none; }
+  .leg-ed-name:focus { border-color:#67e8f9; }
+  .leg-ed-btn { background:rgba(255,255,255,.08); border:1px solid #444; color:#ccc; border-radius:3px;
+    font-size:.6rem; line-height:1; padding:3px 5px; cursor:pointer; flex:0 0 auto; }
+  .leg-ed-btn:hover:not(:disabled) { background:rgba(255,255,255,.18); color:#fff; }
+  .leg-ed-btn:disabled { opacity:.3; cursor:default; }
 </style>
 </head>
 <body>
@@ -457,6 +467,12 @@
             A centred card listing each routed instrument and its colour &mdash; screenshot it for
             the opening seconds of the video. <span class="text-cyan-400 font-mono">L</span> also
             toggles it (works with panels hidden); click anywhere outside the card to dismiss.
+          </div>
+          <div id="legend-editor" class="mt-2"></div>
+          <div class="text-[10px] text-gray-500 mt-1 leading-snug">
+            Rename an instrument (blank = its MIDI name), reorder with
+            <span class="font-mono">&#9650;&#9660;</span>, or <span class="font-mono">&#10005;</span>
+            to leave it off the legend.
           </div>
 
           <div class="mt-3">
@@ -969,6 +985,7 @@ function defaultConfig() {
               orbitOffX: 0, orbitOffY: 0, orbitDistX: 1, orbitDistY: 1, orbitSize: 1, orbitOpacity: 1,
               subwaveOn: false, subwaveTrack: 'all', subwaveColor: '#ff5500', subwaveBase: 21, subwaveSpread: 33,
               subwaveOffX: 0, subwaveOffY: 0, subwaveDistX: 1, subwaveDistY: 1, subwaveSize: 1, subwaveOpacity: 1,
+              legendOrder: [], legendLabels: {}, legendHidden: {},
               shapes: {}, mutes: {} };
   SHAPES.forEach(s => {
     c.shapes[s.id] = {
@@ -2226,6 +2243,7 @@ function refreshTabTrackHighlights() {
     btn.classList.toggle('has-instrument', shapeHasTrack(btn.dataset.selectShape));
   });
   if (typeof buildInstrumentGroups === 'function') buildInstrumentGroups();
+  if (typeof buildLegendEditor === 'function') buildLegendEditor();
 }
 
 /* Map<trackIndex string, [{sid, li}, ...]> — every lane, across every
@@ -2332,23 +2350,97 @@ function buildInstrumentGroups() {
    swatch(es) and name. Meant to be screenshotted and dropped
    into the opening seconds of the video as a key.
    ------------------------------------------------------------ */
+/* The routed tracks in display order. cfg.legendOrder pins an explicit
+   sequence; anything not in it (or a fresh MIDI) falls back to MIDI track
+   order. Stale indices are ignored. */
+function legendOrderedIdx() {
+  const used = [...usedTracksMap().keys()];
+  const pinned = Array.isArray(cfg.legendOrder) ? cfg.legendOrder.filter(i => used.includes(i)) : [];
+  const rest = used.filter(i => !pinned.includes(i)).sort((a, b) => (+a) - (+b));
+  return [...pinned, ...rest];
+}
+function legendLabel(idx) {
+  const custom = cfg.legendLabels && cfg.legendLabels[idx];
+  if (custom != null && custom !== '') return custom;
+  const meta = trackMeta[+idx];
+  return meta ? meta.name : `Track ${idx}`;
+}
+function legendRepColor(idx) {
+  const uses = usedTracksMap().get(String(idx));
+  if (!uses || !uses.length) return '#ffffff';
+  return cfg.shapes[uses[0].sid].lanes[uses[0].li].color || '#ffffff';
+}
+
 function buildLegend() {
   const list = document.getElementById('legend-list');
   if (!list) return;
-  const map = usedTracksMap();
-  if (map.size === 0) {
-    list.innerHTML = '<div class="legend-empty">Load a MIDI file and route some tracks first.</div>';
+  const order = legendOrderedIdx().filter(idx => !(cfg.legendHidden && cfg.legendHidden[idx]));
+  if (!order.length) {
+    list.innerHTML = usedTracksMap().size === 0
+      ? '<div class="legend-empty">Load a MIDI file and route some tracks first.</div>'
+      : '<div class="legend-empty">Every instrument is hidden from the legend.</div>';
     return;
   }
-  list.innerHTML = [...map.entries()].map(([trackIdx, uses]) => {
-    const meta = trackMeta[+trackIdx];
-    const name = meta ? escapeHtml(meta.name) : `Track ${trackIdx}`;
-    // one representative colour per instrument — the same one the Instrument
-    // Colors panel shows (a track can drive several lanes/paths)
-    const col = cfg.shapes[uses[0].sid].lanes[uses[0].li].color || '#ffffff';
-    return `<div class="legend-row"><span class="legend-sw" style="background:${col};color:${col}"></span><span class="legend-name">${name}</span></div>`;
+  list.innerHTML = order.map(idx => {
+    const col = legendRepColor(idx);
+    return `<div class="legend-row"><span class="legend-sw" style="background:${col};color:${col}"></span><span class="legend-name">${escapeHtml(legendLabel(idx))}</span></div>`;
   }).join('');
 }
+
+/* The editor rows under the "Show instrument legend" button: rename,
+   reorder, and hide each routed instrument. */
+function buildLegendEditor() {
+  const host = document.getElementById('legend-editor');
+  if (!host) return;
+  const order = legendOrderedIdx();
+  if (!order.length) { host.innerHTML = ''; return; }
+  host.innerHTML = order.map((idx, i) => {
+    const col = legendRepColor(idx);
+    const hidden = !!(cfg.legendHidden && cfg.legendHidden[idx]);
+    const midiName = (trackMeta[+idx] && trackMeta[+idx].name) || `Track ${idx}`;
+    const cur = (cfg.legendLabels && cfg.legendLabels[idx] != null) ? cfg.legendLabels[idx] : '';
+    return `
+    <div class="leg-ed-row${hidden ? ' leg-ed-off' : ''}" data-idx="${idx}">
+      <span class="leg-ed-sw" style="background:${col}"></span>
+      <input type="text" class="leg-ed-name" value="${escapeHtml(cur)}" placeholder="${escapeHtml(midiName)}">
+      <button type="button" class="leg-ed-btn" data-leg-up ${i === 0 ? 'disabled' : ''} title="Move up">&#9650;</button>
+      <button type="button" class="leg-ed-btn" data-leg-down ${i === order.length - 1 ? 'disabled' : ''} title="Move down">&#9660;</button>
+      <button type="button" class="leg-ed-btn" data-leg-hide title="${hidden ? 'Show in legend' : 'Hide from legend'}">${hidden ? '&#128065;' : '&#10005;'}</button>
+    </div>`;
+  }).join('');
+
+  const commitOrder = (arr) => { cfg.legendOrder = arr; buildLegendEditor(); saveLocal(); };
+  host.querySelectorAll('.leg-ed-name').forEach(inp => {
+    const idx = inp.closest('.leg-ed-row').dataset.idx;
+    const apply = () => {
+      cfg.legendLabels = cfg.legendLabels || {};
+      const v = inp.value.trim();
+      if (v) cfg.legendLabels[idx] = v; else delete cfg.legendLabels[idx];
+    };
+    inp.addEventListener('input', apply);
+    inp.addEventListener('change', () => { apply(); saveLocal(); });
+  });
+  host.querySelectorAll('[data-leg-up], [data-leg-down]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = btn.closest('.leg-ed-row').dataset.idx;
+      const arr = legendOrderedIdx();
+      const p = arr.indexOf(idx);
+      const q = btn.hasAttribute('data-leg-up') ? p - 1 : p + 1;
+      if (q < 0 || q >= arr.length) return;
+      [arr[p], arr[q]] = [arr[q], arr[p]];
+      commitOrder(arr);
+    });
+  });
+  host.querySelectorAll('[data-leg-hide]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = btn.closest('.leg-ed-row').dataset.idx;
+      cfg.legendHidden = cfg.legendHidden || {};
+      if (cfg.legendHidden[idx]) delete cfg.legendHidden[idx]; else cfg.legendHidden[idx] = true;
+      buildLegendEditor(); saveLocal();
+    });
+  });
+}
+
 const legendOverlay = document.getElementById('legend-overlay');
 function showLegend() { buildLegend(); legendOverlay.classList.add('open'); }
 function hideLegend() { legendOverlay.classList.remove('open'); }
