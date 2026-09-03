@@ -75,18 +75,16 @@
   #legend-overlay { position:absolute; inset:0; z-index:60; display:none;
     align-items:center; justify-content:center; background:rgba(0,0,0,.55); }
   #legend-overlay.open { display:flex; }
-  .legend-card { position:relative; background:rgba(10,10,15,.94); border:1px solid rgba(255,255,255,.14);
-    border-radius:1rem; padding:2rem 2.75rem 2.25rem; min-width:min(340px,86vw); max-width:86vw; max-height:86vh;
-    overflow:auto; box-shadow:0 24px 70px rgba(0,0,0,.65); }
-  .legend-title { font-size:1.05rem; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
-    color:#fff; margin-bottom:1.1rem; }
-  .legend-row { display:flex; align-items:center; gap:1rem; padding:.4rem 0; }
-  .legend-sw { width:1.5rem; height:1.5rem; border-radius:.35rem; flex:0 0 auto;
-    box-shadow:0 0 12px currentColor, inset 0 0 0 1px rgba(255,255,255,.25); }
-  .legend-name { font-size:1.15rem; color:#f3f4f6; font-weight:600; }
-  .legend-close { position:absolute; top:.6rem; right:.8rem; background:none; border:none; color:#9ca3af;
-    font-size:1.3rem; line-height:1; cursor:pointer; padding:.2rem .4rem; }
-  .legend-close:hover { color:#fff; }
+  .legend-card { background:rgba(10,10,15,.94); border:1px solid rgba(255,255,255,.14);
+    border-radius:.9rem; padding:1.15rem 1.6rem 1.2rem; max-width:96vw; max-height:86vh;
+    overflow:auto; box-shadow:0 24px 70px rgba(0,0,0,.65); text-align:center; }
+  .legend-title { font-size:.8rem; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
+    color:#9ca3af; margin-bottom:.7rem; }
+  #legend-list { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:.55rem 1.2rem; }
+  .legend-row { display:flex; align-items:center; gap:.45rem; padding:0; }
+  .legend-sw { width:1.05rem; height:1.05rem; border-radius:.25rem; flex:0 0 auto;
+    box-shadow:0 0 10px currentColor, inset 0 0 0 1px rgba(255,255,255,.25); }
+  .legend-name { font-size:.98rem; color:#f3f4f6; font-weight:600; white-space:nowrap; }
   .legend-empty { font-size:.85rem; color:#9ca3af; }
 </style>
 </head>
@@ -97,7 +95,6 @@
 
 <div id="legend-overlay">
   <div class="legend-card">
-    <button type="button" class="legend-close" id="legend-close" title="Close (Esc)">&times;</button>
     <div class="legend-title">Instruments</div>
     <div id="legend-list"></div>
   </div>
@@ -458,8 +455,8 @@
           <button type="button" class="btn-sm mt-3" id="legend-btn" style="width:100%;">Show instrument legend</button>
           <div class="text-[10px] text-gray-500 mt-1 leading-snug">
             A centred card listing each routed instrument and its colour &mdash; screenshot it for
-            the opening seconds of the video. <span class="text-cyan-400 font-mono">L</span> toggles it
-            (works with panels hidden), <span class="text-cyan-400 font-mono">Esc</span> closes.
+            the opening seconds of the video. <span class="text-cyan-400 font-mono">L</span> also
+            toggles it (works with panels hidden); click anywhere outside the card to dismiss.
           </div>
 
           <div class="mt-3">
@@ -2356,8 +2353,8 @@ const legendOverlay = document.getElementById('legend-overlay');
 function showLegend() { buildLegend(); legendOverlay.classList.add('open'); }
 function hideLegend() { legendOverlay.classList.remove('open'); }
 document.getElementById('legend-btn').addEventListener('click', showLegend);
-document.getElementById('legend-close').addEventListener('click', hideLegend);
-legendOverlay.addEventListener('click', e => { if (e.target === legendOverlay) hideLegend(); });
+// click anywhere outside the card dismisses it
+legendOverlay.addEventListener('click', e => { if (!e.target.closest('.legend-card')) hideLegend(); });
 window.addEventListener('keydown', e => {
   if (e.key === 'Escape' && legendOverlay.classList.contains('open')) { e.stopPropagation(); hideLegend(); }
 }, true);
