@@ -1,11 +1,13 @@
 import os
+import sys
 import json
 import librosa
 import numpy as np
 
-# 1. Define folder path and base filename
-FOLDER_PATH = r"G:\Music Softwre\Music RMS for vizualizer"
-SONG_BASE_NAME = "Beethoven, String Quartet op.130 4thMVMT"
+# 1. Folder = wherever this script lives (drop the .wav next to it).
+#    Optionally pass the song name as a command-line argument.
+FOLDER_PATH = os.path.dirname(os.path.abspath(__file__))
+SONG_BASE_NAME = sys.argv[1] if len(sys.argv) > 1 else "Violin Concerto"
 
 # 2. Check common audio extensions
 audio_extensions = [".wav", ".mp3", ".flac", ".m4a", ".ogg"]
@@ -18,8 +20,10 @@ for ext in audio_extensions:
         break
 
 if not audio_file:
+    have = [f for f in os.listdir(FOLDER_PATH) if os.path.splitext(f)[1].lower() in audio_extensions]
     raise FileNotFoundError(
-        f"Could not find an audio file matching '{SONG_BASE_NAME}' with extensions {audio_extensions} in '{FOLDER_PATH}'."
+        f"No '{SONG_BASE_NAME}' audio ({audio_extensions}) in '{FOLDER_PATH}'.\n"
+        f"Audio files that ARE there: {have or 'none'}"
     )
 
 print(f"Loading: {audio_file}")
