@@ -605,9 +605,23 @@ const SHAPES = [
       // tall (portrait / social) frame throws the arcs and their blooms out
       // into the corners where half of every bloom clips off-screen
       const R = Math.min(g.W, g.H) * 0.45;
-      const a = li === 0 ? (-Math.PI / 2 + t * Math.PI) : (Math.PI / 2 + t * Math.PI);
+      const aStart = li === 0 ? -Math.PI / 2 : Math.PI / 2;
+      const a = aStart + t * Math.PI;
       const ox = li === 0 ? 0 : g.W;
-      return { x: ox + R * Math.cos(a), y: g.CY + R * Math.sin(a), angle: a + Math.PI / 2 };
+      const cx = ox + R * Math.cos(a), cy = g.CY + R * Math.sin(a);
+      // STRAIGHTEN: lerp each arc toward the straight chord between its two
+      // endpoints (a vertical line at x = ox). 0 = full arc, 1 = straight.
+      const pc = cfg.shapes && cfg.shapes.parc;
+      const s = pc && pc.straighten ? Math.max(0, Math.min(1, pc.straighten)) : 0;
+      if (s <= 0) return { x: cx, y: cy, angle: a + Math.PI / 2 };
+      const inset = Math.min(g.W, g.H) * 0.04;               // keep the straight line just clear of the edge
+      const sx = ox + (li === 0 ? inset : -inset);
+      const sy = g.CY + R * Math.sin(aStart) * (1 - 2 * t);  // y runs linearly down the chord
+      return {
+        x: cx + (sx - cx) * s,
+        y: cy + (sy - cy) * s,
+        angle: a + Math.PI / 2 - a * s   // rotate the glyphs toward vertical as it flattens
+      };
     }
   },
   {
@@ -949,6 +963,7 @@ function defaultConfig() {
     c.shapes['dna'].windDirA = 1;
     c.shapes['dna'].windDirB = -1;
   }
+  if (c.shapes['parc']) c.shapes['parc'].straighten = 0;
   return c;
 }
 let cfg = defaultConfig();
@@ -2014,6 +2029,10 @@ function buildShapeSections() {
             <option value="-1" selected>Reversed</option>
           </select>
         </div>` : ''}
+        ${s.id === 'parc' ? `
+        <div class="col-span-2"><span class="lbl text-purple-300">STRAIGHTEN <span class="text-gray-300 font-mono" id="ro-straighten-${s.id}">0</span></span>
+          <input type="range" data-cfg="shape.${s.id}.straighten" data-readout="ro-straighten-${s.id}" data-snap-mid="0" min="0" max="1" step="0.01" value="0"
+            title="Morphs each arc from a curve toward a straight vertical line at the stage edge. 0 = full arc, 1 = straight. Double-click to reset."></div>` : ''}
         <div><span class="lbl">INK COLOR (Lane 1)</span>
           <input type="color" class="swatch-hex" data-cfg="lane.${s.id}.0.ink" value="${s.ink}"
             style="width:100%;height:26px;padding:1px 2px;border-radius:4px;border:1px solid #555;background:transparent;cursor:pointer;"></div>
@@ -2436,7 +2455,7 @@ function applyControl(node) {
     if (key === 'wispLife' || key === 'revAmt' || key === 'bloomAmt' || key === 'fireworkAmt' ||
         key === 'vibAmt' || key === 'vibRate' || key === 'lenScale' || key === 'thickScale' ||
         key === 'offX' || key === 'offY' || key === 'distX' || key === 'distY' || key === 'twistSpeed' ||
-        key === 'windDirA' || key === 'windDirB' ||
+        key === 'windDirA' || key === 'windDirB' || key === 'straighten' ||
         key === 'petalAmt' || key === 'petalFall') v = parseFloat(raw);
     cfg.shapes[sid][key] = v;
     // keep the live SHAPES object in sync so renderShapes() sees the new color
@@ -2449,7 +2468,7 @@ function applyControl(node) {
       if (dot) dot.style.background = v;
     }
     if (key === 'offX' || key === 'offY' || key === 'distX' || key === 'distY' || key === 'mirrorMode' || key === 'twistSpeed' ||
-        key === 'helixMode' || key === 'windDirA' || key === 'windDirB') invalidateBlueprint();
+        key === 'helixMode' || key === 'windDirA' || key === 'windDirB' || key === 'straighten') invalidateBlueprint();
     if (key === 'track') { resetScanners(); firstNote = null; if (typeof computeFirstNote === 'function') computeFirstNote(); refreshTabTrackHighlights(); }
   } else if (parts_[0] === 'lane') {
     const [, sid, li, key] = parts_;
