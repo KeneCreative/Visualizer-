@@ -601,7 +601,10 @@ const SHAPES = [
     lanes: [{ id: 'l', label: 'Left Arc' }, { id: 'r', label: 'Right Arc' }],
     mirrors: ['none'],
     place(t, li, g) {
-      const R = g.H * 0.45;
+      // radius off the smaller stage dimension, not the height — otherwise a
+      // tall (portrait / social) frame throws the arcs and their blooms out
+      // into the corners where half of every bloom clips off-screen
+      const R = Math.min(g.W, g.H) * 0.45;
       const a = li === 0 ? (-Math.PI / 2 + t * Math.PI) : (Math.PI / 2 + t * Math.PI);
       const ox = li === 0 ? 0 : g.W;
       return { x: ox + R * Math.cos(a), y: g.CY + R * Math.sin(a), angle: a + Math.PI / 2 };
