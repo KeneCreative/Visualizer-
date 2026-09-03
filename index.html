@@ -3263,11 +3263,13 @@ function emitTaper(shape, li, tt, sc, thickS, gc, life, dirSign, reflectMode, mg
   }
 
   // Connected-line styles. Walk the tail as a sequence of points and join
-  // each consecutive pair with a thin bar, so it reads as one continuous
-  // line rather than a string of blobs.
-  //   taper  — even fade front to back
-  //   comet  — weight (width + alpha) pushed toward the head, thin fast
-  //   dashed — every other link left out
+  // each consecutive pair.
+  //   taper  — a smooth tube that STARTS at the note-head's own width
+  //            (baseR) and tapers from there, so a round note drags a tail
+  //            its own size instead of a thin thread ("lollipop stick")
+  //   comet  — same, weighted toward the head so it thins fast
+  //   dashed — thin gapped bars
+  const dashed = style === 'dashed';
   let prev = null, prevF = 1, prevOK = false;
   for (let k = 0; k <= segs; k++) {
     let f = 1 - k / (segs + 1);              // 1 -> 0 taper
@@ -3277,24 +3279,40 @@ function emitTaper(shape, li, tt, sc, thickS, gc, life, dirSign, reflectMode, mg
     else if (et < 0 || et > 1) { prevOK = false; continue; }  // open path: don't connect across the end
 
     const p = placeAt(shape, et, li, geo, sc);
-    const gap = (style === 'dashed') && (k % 2 === 0);
+    const gap = dashed && (k % 2 === 0);
     if (prevOK && !gap) {
       const midF = (f + prevF) / 2;
-      const R = Math.max(0.5, baseR * midF * 0.95);
+      const R = Math.max(0.5, baseR * midF * (dashed ? 0.55 : 1));
       const dx = p.x - prev.x, dy = p.y - prev.y;
-      const dist = Math.hypot(dx, dy), hy = R * 0.55;
+      const dist = Math.max(0.5, Math.hypot(dx, dy));
       const angle = Math.atan2(dy, dx);
-      const a = life * midF * midF * 0.85;
-      push((prev.x + p.x) / 2, (prev.y + p.y) / 2, dist / 2, hy, angle,
-           Math.min(hy * 0.5, 2.0), R * 0.8, 0, gc[0], gc[1], gc[2], a, 1, 0, 0);
+      // taper/comet: overrun each capsule past both endpoints by R so
+      // consecutive ones heavily overlap into one continuous tube; drop the
+      // per-capsule alpha by that overlap so the additive pile-up still sums
+      // to roughly `a`. dashed keeps short, non-overlapping bars.
+      // each capsule overruns its segment by 1.4x its own length, so every
+      // point is covered by ~4 of them regardless of how fast the path moves
+      // — a constant overlap that blends into one smooth tube with no
+      // scalloping. per-capsule alpha divided by that count.
+      const over  = dashed ? 0 : dist * 1.4;
+      const soft  = dashed ? R * 0.7 : Math.max(1, R * 0.3);
+      const mode  = dashed ? 1 : 0;
+      const hx    = dist / 2 + over;
+      const round = dashed ? Math.min(hx, 2.0) : Math.min(hx, R);
+      const cover = dashed ? 1 : 3.8;
+      const a = life * midF * midF * (dashed ? 0.85 : 1.2) / cover;
+      push((prev.x + p.x) / 2, (prev.y + p.y) / 2, hx, R, angle,
+           round, soft, 0, gc[0], gc[1], gc[2], a, mode, 0, 0);
       // mirrored copy, so an 'lr'/'radial' mirrored track carries its tail too
       // (in its own MIRROR COLOR if one's set)
       if (reflectMode) {
         const m1 = mirrorPlacement(reflectMode, prev, geo), m2 = mirrorPlacement(reflectMode, p, geo);
         if (m1 && m2) {
-          const mdx = m2.x - m1.x, mdy = m2.y - m1.y, mdist = Math.hypot(mdx, mdy);
-          push((m1.x + m2.x) / 2, (m1.y + m2.y) / 2, mdist / 2, hy, Math.atan2(mdy, mdx),
-               Math.min(hy * 0.5, 2.0), R * 0.8, 0, mc[0], mc[1], mc[2], a, 1, 0, 0);
+          const mdx = m2.x - m1.x, mdy = m2.y - m1.y, mdist = Math.max(0.5, Math.hypot(mdx, mdy));
+          const mover = dashed ? 0 : mdist * 1.4, mhx = mdist / 2 + mover;
+          push((m1.x + m2.x) / 2, (m1.y + m2.y) / 2, mhx, R, Math.atan2(mdy, mdx),
+               dashed ? Math.min(mhx, 2.0) : Math.min(mhx, R), soft, 0, mc[0], mc[1], mc[2],
+               a, mode, 0, 0);
         }
       }
     }
