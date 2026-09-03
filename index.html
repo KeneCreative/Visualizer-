@@ -962,6 +962,24 @@ const SHAPES = [
       const side = li < 4 ? 0 : 1;     // 0 = Left (computed directly), 1 = Right (mirrored per MIRROR MODE)
       return mirroredLane('dna', t, side, g, u => param(rawFn, u));
     }
+  },
+  {
+    id: 'cross', label: 'Cross', glow: '#ff5555', ink: '#ffd6d6',
+    glyph: 'bar', half: { len: 8, thick: 3 },
+    // Four straight arms radiating from the stage centre — Up / Right / Down
+    // / Left — each its own independent lane (track + colour). t = 0 sits at
+    // the centre, t = 1 at the arm tip. Already 4-fold symmetric, so no
+    // runtime mirror is needed on top of it.
+    lanes: [{ id: 'u', label: 'Up' }, { id: 'r', label: 'Right' },
+            { id: 'd', label: 'Down' }, { id: 'l', label: 'Left' }],
+    mirrors: ['none'],
+    fill: 0.45,   // arm length as a fraction of the smaller stage dimension
+    place(t, li, g) {
+      const arm = Math.min(g.W, g.H) * this.fill;
+      const dir = [{ x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 }][li];
+      return { x: g.CX + dir.x * arm * t, y: g.CY + dir.y * arm * t,
+               angle: Math.atan2(dir.y, dir.x) };
+    }
   }
 ];
 const SHAPE_BY_ID = Object.fromEntries(SHAPES.map(s => [s.id, s]));
@@ -1477,7 +1495,7 @@ const BP = {
   amber: 'rgba(255,176,0,.22)', orange: 'rgba(255,102,0,.25)', rose: 'rgba(255,0,85,.3)',
   silver: 'rgba(205,220,255,.28)', lime: 'rgba(168,255,0,.26)', crimson: 'rgba(255,51,102,.28)',
   violet: 'rgba(124,77,255,.28)', pink: 'rgba(255,77,196,.28)', rosegold: 'rgba(255,138,0,.28)',
-  boltyellow: 'rgba(255,243,77,.3)'
+  boltyellow: 'rgba(255,243,77,.3)', crossred: 'rgba(255,85,85,.3)'
 };
 
 function line(c, x1, y1, x2, y2, color, w = 1) {
@@ -1630,6 +1648,10 @@ function drawBlueprint(c) {
   traceGuide(c, 'dna', 2, 400, BP.pink, 1.5);
   traceGuide(c, 'dna', 4, 400, BP.violet, 1.5);
   traceGuide(c, 'dna', 6, 400, BP.pink, 1.5);
+  traceGuide(c, 'cross', 0, 2, BP.crossred, 1.5);   // 4 straight arms from the centre
+  traceGuide(c, 'cross', 1, 2, BP.crossred, 1.5);
+  traceGuide(c, 'cross', 2, 2, BP.crossred, 1.5);
+  traceGuide(c, 'cross', 3, 2, BP.crossred, 1.5);
 }
 
 /* Draws only the currently-selected path's own outline in bold white —
