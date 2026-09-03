@@ -964,21 +964,27 @@ const SHAPES = [
     }
   },
   {
-    id: 'cross', label: 'Cross', glow: '#ff5555', ink: '#ffd6d6',
+    id: 'cross', label: 'Crucifix', glow: '#ff5555', ink: '#ffd6d6',
     glyph: 'bar', half: { len: 8, thick: 3 },
-    // Four straight arms radiating from the stage centre — Up / Right / Down
-    // / Left — each its own independent lane (track + colour). t = 0 sits at
-    // the centre, t = 1 at the arm tip. Already 4-fold symmetric, so no
-    // runtime mirror is needed on top of it.
-    lanes: [{ id: 'u', label: 'Up' }, { id: 'r', label: 'Right' },
-            { id: 'd', label: 'Down' }, { id: 'l', label: 'Left' }],
+    // A Latin cross: long vertical, short top arm, the crossbar set in the
+    // upper third. Four independent lanes (own track + colour) run from the
+    // crossing point outward — Top (short) / Right / Foot (long) / Left. The
+    // whole figure is centred on the stage, so the crossing point sits above
+    // the middle. Left/Right are equal, so it's still left-right symmetric.
+    lanes: [{ id: 'u', label: 'Top' }, { id: 'r', label: 'Right arm' },
+            { id: 'd', label: 'Foot' }, { id: 'l', label: 'Left arm' }],
     mirrors: ['none'],
-    fill: 0.45,   // arm length as a fraction of the smaller stage dimension
+    fill: 0.72,      // total height as a fraction of the smaller stage dimension
+    topFrac: 0.26,   // top arm / total height (i.e. how far down the crossbar sits)
+    sideFrac: 0.34,  // each crossbar arm / total height
     place(t, li, g) {
-      const arm = Math.min(g.W, g.H) * this.fill;
-      const dir = [{ x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 }][li];
-      return { x: g.CX + dir.x * arm * t, y: g.CY + dir.y * arm * t,
-               angle: Math.atan2(dir.y, dir.x) };
+      const Lv = Math.min(g.W, g.H) * this.fill;
+      const top = Lv * this.topFrac, bot = Lv * (1 - this.topFrac), side = Lv * this.sideFrac;
+      const crossY = g.CY - (bot - top) / 2;   // centre the whole figure vertically
+      const P = [{ x: 0, y: -1, len: top }, { x: 1, y: 0, len: side },
+                 { x: 0, y: 1, len: bot }, { x: -1, y: 0, len: side }][li];
+      return { x: g.CX + P.x * P.len * t, y: crossY + P.y * P.len * t,
+               angle: Math.atan2(P.y, P.x) };
     }
   }
 ];
