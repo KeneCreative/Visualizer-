@@ -3038,13 +3038,41 @@ function loadLocal() {
     writeConfigToDOM();
   } catch (e) {}
 }
-document.getElementById('p-export').addEventListener('click', () => {
-  const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
+/* Save a blob to disk. Where the File System Access API is available
+   (Chrome) this is a real native Save-As dialog — pick the name AND the
+   folder; elsewhere it falls back to a filename prompt + a download to
+   the browser's download folder. Returns the chosen name, or null if the
+   user cancelled. */
+async function saveBlob(blob, suggestedName, description, ext, mime) {
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName,
+        types: [{ description, accept: { [mime]: ['.' + ext] } }]
+      });
+      const w = await handle.createWritable();
+      await w.write(blob); await w.close();
+      return handle.name;
+    } catch (e) {
+      if (e && e.name === 'AbortError') return null;   // cancelled — don't also download
+      /* anything else (e.g. no user gesture): fall through to the download path */
+    }
+  }
+  let name = prompt('Save as:', suggestedName);
+  if (name === null) return null;
+  name = name.trim() || suggestedName;
+  if (!name.toLowerCase().endsWith('.' + ext)) name += '.' + ext;
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'mam-preset.json';
+  a.download = name;
   a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  return name;
+}
+
+document.getElementById('p-export').addEventListener('click', async () => {
+  const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
+  await saveBlob(blob, 'mam-preset.json', 'MAM preset', 'json', 'application/json');
 });
 document.getElementById('p-import').addEventListener('click', () => document.getElementById('p-file').click());
 document.getElementById('p-file').addEventListener('change', e => {
@@ -3086,15 +3114,12 @@ recBtn.addEventListener('click', () => {
     recorder = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 12e6 } : undefined);
     chunks = [];
     recorder.ondataavailable = ev => { if (ev.data.size) chunks.push(ev.data); };
-    recorder.onstop = () => {
+    recorder.onstop = async () => {
       const blob = new Blob(chunks, { type: 'video/webm' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'mam-capture.webm';
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
       recBtn.classList.remove('active'); recBtn.textContent = '● Record';
-      recStatus.textContent = 'Saved mam-capture.webm';
+      recStatus.textContent = 'Saving…';
+      const name = await saveBlob(blob, 'mam-capture.webm', 'WebM video', 'webm', 'video/webm');
+      recStatus.textContent = name ? ('Saved ' + name) : 'Save cancelled';
     };
     recorder.start();
     recBtn.classList.add('active'); recBtn.textContent = '■ Stop';
