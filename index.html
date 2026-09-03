@@ -70,12 +70,38 @@
   .sub-hd { font-size:11px; font-weight:600; letter-spacing:.04em; color:#67e8f9; margin:.6rem 0 .3rem; text-transform:uppercase; }
   ::-webkit-scrollbar { width:8px; } ::-webkit-scrollbar-track { background:transparent; }
   ::-webkit-scrollbar-thumb { background:#333; border-radius:4px; }
+
+  /* Instrument legend — a centred card to screenshot for a video intro */
+  #legend-overlay { position:absolute; inset:0; z-index:60; display:none;
+    align-items:center; justify-content:center; background:rgba(0,0,0,.55); }
+  #legend-overlay.open { display:flex; }
+  .legend-card { position:relative; background:rgba(10,10,15,.94); border:1px solid rgba(255,255,255,.14);
+    border-radius:1rem; padding:2rem 2.75rem 2.25rem; min-width:min(340px,86vw); max-width:86vw; max-height:86vh;
+    overflow:auto; box-shadow:0 24px 70px rgba(0,0,0,.65); }
+  .legend-title { font-size:1.05rem; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
+    color:#fff; margin-bottom:1.1rem; }
+  .legend-row { display:flex; align-items:center; gap:1rem; padding:.4rem 0; }
+  .legend-sw { width:1.5rem; height:1.5rem; border-radius:.35rem; flex:0 0 auto;
+    box-shadow:0 0 12px currentColor, inset 0 0 0 1px rgba(255,255,255,.25); }
+  .legend-name { font-size:1.15rem; color:#f3f4f6; font-weight:600; }
+  .legend-close { position:absolute; top:.6rem; right:.8rem; background:none; border:none; color:#9ca3af;
+    font-size:1.3rem; line-height:1; cursor:pointer; padding:.2rem .4rem; }
+  .legend-close:hover { color:#fff; }
+  .legend-empty { font-size:.85rem; color:#9ca3af; }
 </style>
 </head>
 <body>
 
 <canvas id="stage"></canvas>
 <div id="countdown-overlay"></div>
+
+<div id="legend-overlay">
+  <div class="legend-card">
+    <button type="button" class="legend-close" id="legend-close" title="Close (Esc)">&times;</button>
+    <div class="legend-title">Instruments</div>
+    <div id="legend-list"></div>
+  </div>
+</div>
 
 <div id="ui-layer">
   <div class="panel" id="main-panel">
@@ -427,6 +453,13 @@
           <div class="text-[10px] text-gray-500 mt-2 leading-snug">
             Press <span class="text-cyan-400 font-mono">H</span> to hide every panel at once
             (toggles back with <span class="text-cyan-400 font-mono">H</span>). Ideal for OBS.
+          </div>
+
+          <button type="button" class="btn-sm mt-3" id="legend-btn" style="width:100%;">Show instrument legend</button>
+          <div class="text-[10px] text-gray-500 mt-1 leading-snug">
+            A centred card listing each routed instrument and its colour &mdash; screenshot it for
+            the opening seconds of the video. <span class="text-cyan-400 font-mono">L</span> toggles it
+            (works with panels hidden), <span class="text-cyan-400 font-mono">Esc</span> closes.
           </div>
 
           <div class="mt-3">
@@ -2296,6 +2329,39 @@ function buildInstrumentGroups() {
   });
 }
 
+/* ------------------------------------------------------------
+   INSTRUMENT LEGEND
+   A centred card, one row per routed MIDI track: its colour
+   swatch(es) and name. Meant to be screenshotted and dropped
+   into the opening seconds of the video as a key.
+   ------------------------------------------------------------ */
+function buildLegend() {
+  const list = document.getElementById('legend-list');
+  if (!list) return;
+  const map = usedTracksMap();
+  if (map.size === 0) {
+    list.innerHTML = '<div class="legend-empty">Load a MIDI file and route some tracks first.</div>';
+    return;
+  }
+  list.innerHTML = [...map.entries()].map(([trackIdx, uses]) => {
+    const meta = trackMeta[+trackIdx];
+    const name = meta ? escapeHtml(meta.name) : `Track ${trackIdx}`;
+    // one representative colour per instrument — the same one the Instrument
+    // Colors panel shows (a track can drive several lanes/paths)
+    const col = cfg.shapes[uses[0].sid].lanes[uses[0].li].color || '#ffffff';
+    return `<div class="legend-row"><span class="legend-sw" style="background:${col};color:${col}"></span><span class="legend-name">${name}</span></div>`;
+  }).join('');
+}
+const legendOverlay = document.getElementById('legend-overlay');
+function showLegend() { buildLegend(); legendOverlay.classList.add('open'); }
+function hideLegend() { legendOverlay.classList.remove('open'); }
+document.getElementById('legend-btn').addEventListener('click', showLegend);
+document.getElementById('legend-close').addEventListener('click', hideLegend);
+legendOverlay.addEventListener('click', e => { if (e.target === legendOverlay) hideLegend(); });
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && legendOverlay.classList.contains('open')) { e.stopPropagation(); hideLegend(); }
+}, true);
+
 /* Vivid, well-spaced random colors (HSL with high saturation, mid
    lightness) rather than raw random RGB, which tends toward muddy or
    near-identical results. */
@@ -2931,6 +2997,8 @@ document.addEventListener('keydown', e => {
   if (e.key === 'h' || e.key === 'H') {
     allHidden = !allHidden;
     uiLayer.style.display = allHidden ? 'none' : '';
+  } else if (e.key === 'l' || e.key === 'L') {
+    legendOverlay.classList.contains('open') ? hideLegend() : showLegend();
   }
 });
 
