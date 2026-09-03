@@ -2089,7 +2089,8 @@ function buildShapeSections() {
           <input type="range" data-cfg="shape.${s.id}.fireworkAmt" data-snap-mid="0" min="0" max="1" step="0.01" value="0"
             title="Sparks burst outward radially the instant a note starts — also on note ATTACK, alongside Reverb Bloom"></div>
         <div><span class="lbl text-fuchsia-400">BASS WEIGHT</span>
-          <label class="flex items-center gap-1 mt-1 cursor-pointer">
+          <label class="flex items-center gap-1 mt-1 cursor-pointer"
+            title="Low notes get a longer reverb tail and a longer-lingering bloom. Off = every note weighted the same, so two voices on this path bloom identically.">
             <input type="checkbox" data-cfg="shape.${s.id}.revBass" checked>
             <span class="text-[10px] text-gray-400">Low = longer</span>
           </label></div>
@@ -3141,13 +3142,18 @@ function spawnBloom(p, sc, tt, glowColor) {
   const amt = sc.bloomAmt || 0;
   if (amt <= 0.001 || blooms.length >= bloomCap) return;
   const lowNorm = sc.revBass ? (1 - tt) : 0.5;
-  const w   = 0.40 + 0.60 * lowNorm;          // bass blooms bigger + longer
+  // Bass weight leans on how long the bloom LINGERS, not how big it gets.
+  // Tying max radius to pitch made two voices on one path (e.g. the Purple
+  // Arcs' two arcs, routed to a low + a high instrument) bloom at visibly
+  // different sizes — a ~2x mismatch. Size now barely moves with pitch.
+  const wLife = 0.60 + 0.70 * (0.40 + 0.60 * lowNorm);
+  const wSize = 0.64 + 0.12 * lowNorm;   // centred on the old mid-pitch size, ~1.2x spread (was ~2.5x)
   const col = rgb(glowColor);
-  const life = (0.55 + 1.7 * amt) * (0.6 + 0.7 * w);
+  const life = (0.55 + 1.7 * amt) * wLife;
   blooms.push({
     x: p.x, y: p.y,
     life, maxLife: life,
-    r0: 5, r1: (55 + 330 * amt) * w,
+    r0: 5, r1: (55 + 330 * amt) * wSize,
     amt,
     cr: col[0], cg: col[1], cb: col[2]
   });
