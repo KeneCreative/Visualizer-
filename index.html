@@ -1136,7 +1136,7 @@ function defaultConfig() {
       revAmt: 0, revBass: true, bloomAmt: 0, fireworkAmt: 0,
       noteShape: 'line', vibAmt: 0, vibRate: 5,
       petalAmt: 0, petalFall: 55,
-      lanes: s.lanes.map((ln, i) => ({ on: true, track: 'shared', dir: 'forward', noteShape: 'shared',
+      lanes: s.lanes.map((ln, i) => ({ on: true, track: 'shared', dir: 'forward', noteShape: 'shared', revAmt: 'shared',
         color: (s.laneColors && s.laneColors[i]) || s.glow, ink: s.ink }))
     };
   });
@@ -2170,6 +2170,18 @@ function buildShapeSections() {
             </label>`).join('')}
         </div>
       </div>` : '';
+    const laneRevOverrides = s.lanes.length > 1 ? `
+      <div class="col-span-3 mt-1">
+        <span class="lbl text-fuchsia-400">PER-LANE PATH REVERB — override the amount above for individual voices</span>
+        <div class="grid grid-cols-2 gap-x-2 gap-y-1 mt-1">
+          ${s.lanes.map((ln, li) => `
+            <label class="text-[10px] text-gray-400 flex flex-col gap-0.5 min-w-0">
+              <span class="truncate">${escapeHtml(ln.label)}</span>
+              <input type="number" min="0" max="2" step="0.01" placeholder="shared"
+                data-cfg="lane.${s.id}.${li}.revAmt" title="Blank = follow the PATH REVERB slider above">
+            </label>`).join('')}
+        </div>
+      </div>` : '';
     const hasMirrorLane = s.lanes.some(l => l.id === 'mirror') || s.usesMirrorMode === true;
     const hasTwist = s.twistSpeed !== undefined;
     return `
@@ -2279,6 +2291,7 @@ function buildShapeSections() {
         <div class="col-span-2"><span class="lbl text-fuchsia-400">PATH REVERB <span class="text-gray-300 font-mono" id="ro-revAmt-${s.id}">0</span></span>
           <input type="range" data-cfg="shape.${s.id}.revAmt" data-readout="ro-revAmt-${s.id}" data-snap-mid="0" min="0" max="2" step="0.01" value="0"
             title="Decaying echoes back along this shape's path"></div>
+        ${laneRevOverrides}
         <div class="col-span-2"><span class="lbl text-sky-400">REVERB BLOOM</span>
           <input type="range" data-cfg="shape.${s.id}.bloomAmt" data-snap-mid="0" min="0" max="1" step="0.01" value="0"
             title="Expanding ring that radiates outward and fades — triggers on note ATTACK"></div>
@@ -2778,7 +2791,11 @@ function applyControl(node) {
     if (key === 'track') { resetScanners(); firstNote = null; if (typeof computeFirstNote === 'function') computeFirstNote(); refreshTabTrackHighlights(); }
   } else if (parts_[0] === 'lane') {
     const [, sid, li, key] = parts_;
-    cfg.shapes[sid].lanes[+li][key] = raw;
+    // revAmt's box is blank = "follow the path's own PATH REVERB slider";
+    // any typed number overrides it for just this lane
+    cfg.shapes[sid].lanes[+li][key] = (key === 'revAmt')
+      ? (raw === '' || raw == null ? 'shared' : parseFloat(raw))
+      : raw;
     if (key === 'track') { resetScanners(); firstNote = null; if (typeof computeFirstNote === 'function') computeFirstNote(); refreshTabTrackHighlights(); }
     // Lane 1's color drives the tab-strip dot and the blueprint's guide color
     if (key === 'color' && +li === 0) {
@@ -3696,7 +3713,11 @@ function applyVibrato(p, sc, t, seed) {
    single call as everything else.
    ============================================================ */
 function emitReverb(shape, li, tt, sc, lenS, thickS, ic, gc, life, glowAmt, reflectMode, mgc, laneDirSign, noteKey) {
-  const amt = sc.revAmt || 0;
+  // a lane's own PATH REVERB box (a plain number, not the 'shared' sentinel)
+  // overrides the path-wide slider, so e.g. the Sun's Disc can echo longer
+  // than its Rays without the two fighting over one shared amount
+  const laneOverride = sc.lanes && sc.lanes[li] && sc.lanes[li].revAmt;
+  const amt = (typeof laneOverride === 'number' && !Number.isNaN(laneOverride)) ? laneOverride : (sc.revAmt || 0);
   if (amt <= 0.001) return;
   const mc = mgc || gc;
   const dirSign = laneDirSign || 1;
