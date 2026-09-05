@@ -25,6 +25,7 @@ then visit http://localhost:8000/
 | `presets/` | Exported control-panel presets (`.json`) |
 | `pipeline/align_midi.py` | librosa chroma + DTW to align a source MIDI to a recording |
 | `pipeline/extract_rms.py` | RMS-energy extractor → `[{t,e}]` JSON for the ENERGY macro |
+| `pipeline/fix_wav_headers.py` | repair `audio/` WAVs with a streamed (unknown-length) header — the browser can't play those as a Backing Track |
 | `audio/` | Source recordings (`.wav`, `.mp4`) — git-ignored, local only |
 | `midi/source/` | Original / unaligned MIDIs |
 | `midi/aligned/` | DTW-aligned MIDIs (output of `align_midi.py`) |
@@ -40,6 +41,15 @@ python pipeline/align_midi.py
 
 # extract RMS energy — arg is a case-insensitive name fragment of a file in audio/
 python pipeline/extract_rms.py "Brandenburg 4"
+```
+
+If a recording came out of ffmpeg/yt-dlp it may have a streamed WAV header
+(`RIFF`/`data` size = `0xFFFFFFFF`). Python reads it fine but the browser's
+`decodeAudioData` doesn't, so the Backing Track cuts in and out. Fix in place:
+
+```bash
+python pipeline/fix_wav_headers.py            # scan + repair audio/
+python pipeline/fix_wav_headers.py --check    # report only
 ```
 
 ## Workflow
