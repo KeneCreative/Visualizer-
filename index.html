@@ -994,12 +994,14 @@ const SHAPES = [
     // A companion for Clouds — warm where clouds are cool, and tucked into
     // a top corner so it doesn't collide with the cloud band across the
     // middle of the top edge. Two lanes share one centre: a plain disc rim
-    // and a spiky ray-burst outline just outside it.
+    // and a spiky ray-burst outline that stays outside it — the rays'
+    // troughs sit right at the disc's edge (rimFrac) and never dip inside,
+    // spiking out to tipFrac at their points.
     lanes: [{ id: 'disc', label: 'Disc' }, { id: 'rays', label: 'Rays' }],
     laneColors: ['#ffcc33', '#ffe28a'],
     mirrors: ['none'],
     fill: 0.15,    // disc radius as a fraction of the smaller stage dimension
-    cx: 0.82, cy: 0.15, cusps: 14,
+    cx: 0.82, cy: 0.15, cusps: 14, rimFrac: 1.08, tipFrac: 1.75,
     place(t, li, g) {
       const cx = g.W * this.cx, cy = g.H * this.cy;
       const R = Math.min(g.W, g.H) * this.fill;
@@ -1009,7 +1011,8 @@ const SHAPES = [
       }
       return param(u => {
         const th = u * TAU;
-        const r = R * 1.55 * (0.62 + 0.38 * Math.cos(this.cusps * th));
+        const spike = 0.5 + 0.5 * Math.cos(this.cusps * th);   // 0 at troughs, 1 at tips
+        const r = R * (this.rimFrac + (this.tipFrac - this.rimFrac) * spike);
         return { x: cx + r * Math.cos(th), y: cy + r * Math.sin(th) };
       }, t);
     }
