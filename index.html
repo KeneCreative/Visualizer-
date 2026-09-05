@@ -989,6 +989,32 @@ const SHAPES = [
     }
   },
   {
+    closed: true, id: 'sun', label: 'Sun', glow: '#ffcc33', ink: '#fff3cc',
+    glyph: 'bar', half: { len: 7, thick: 3 },
+    // A companion for Clouds — warm where clouds are cool, and tucked into
+    // a top corner so it doesn't collide with the cloud band across the
+    // middle of the top edge. Two lanes share one centre: a plain disc rim
+    // and a spiky ray-burst outline just outside it.
+    lanes: [{ id: 'disc', label: 'Disc' }, { id: 'rays', label: 'Rays' }],
+    laneColors: ['#ffcc33', '#ffe28a'],
+    mirrors: ['none'],
+    fill: 0.15,    // disc radius as a fraction of the smaller stage dimension
+    cx: 0.82, cy: 0.15, cusps: 14,
+    place(t, li, g) {
+      const cx = g.W * this.cx, cy = g.H * this.cy;
+      const R = Math.min(g.W, g.H) * this.fill;
+      if (li === 0) {
+        const a = t * TAU;
+        return { x: cx + R * Math.cos(a), y: cy + R * Math.sin(a), angle: a + Math.PI / 2 };
+      }
+      return param(u => {
+        const th = u * TAU;
+        const r = R * 1.55 * (0.62 + 0.38 * Math.cos(this.cusps * th));
+        return { x: cx + r * Math.cos(th), y: cy + r * Math.sin(th) };
+      }, t);
+    }
+  },
+  {
     id: 'cross', label: 'Crucifix', glow: '#ff5555', ink: '#ffd6d6',
     glyph: 'bar', half: { len: 8, thick: 3 },
     // A Latin cross: long vertical, short top arm, the crossbar set in the
@@ -1527,7 +1553,7 @@ const BP = {
   silver: 'rgba(205,220,255,.28)', lime: 'rgba(168,255,0,.26)', crimson: 'rgba(255,51,102,.28)',
   violet: 'rgba(124,77,255,.28)', pink: 'rgba(255,77,196,.28)', rosegold: 'rgba(255,138,0,.28)',
   boltyellow: 'rgba(255,243,77,.3)', crossred: 'rgba(255,85,85,.3)',
-  cloud: 'rgba(188,216,255,.28)'
+  cloud: 'rgba(188,216,255,.28)', sun: 'rgba(255,204,51,.3)'
 };
 
 function line(c, x1, y1, x2, y2, color, w = 1) {
@@ -1687,6 +1713,8 @@ function drawBlueprint(c) {
   traceGuide(c, 'cloud', 0, 140, BP.cloud, 1);      // three puffs across the top
   traceGuide(c, 'cloud', 1, 140, BP.cloud, 1);
   traceGuide(c, 'cloud', 2, 140, BP.cloud, 1);
+  traceGuide(c, 'sun', 0, 80, BP.sun, 1);           // disc + ray-burst, tucked in a corner
+  traceGuide(c, 'sun', 1, 200, BP.sun, 1);
 }
 
 /* Draws only the currently-selected path's own outline in bold white —
