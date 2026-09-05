@@ -978,7 +978,11 @@ const SHAPES = [
     xoff: 0.26,     // horizontal offset of the side clouds, as a fraction of width
     place(t, li, g) {
       const R = Math.min(g.W, g.H) * this.fill;
-      const cx = g.CX + [-1, 0, 1][li] * g.W * this.xoff;
+      // GATHER pulls the Left/Right clouds in toward the Centre one — 0 keeps
+      // the default spread, 1 stacks all three on the same centre.
+      const dc = cfg.shapes['cloud'];
+      const gather = dc && dc.gather != null ? Math.max(0, Math.min(1, dc.gather)) : 0;
+      const cx = g.CX + [-1, 0, 1][li] * g.W * this.xoff * (1 - gather);
       const cy = g.H * (li === 1 ? 0.12 : 0.17);
       return param(u => {
         const a = u * TAU;
@@ -1031,7 +1035,10 @@ const SHAPES = [
     // separate tracks/colours to route.
     lanes: [{ id: 'f', label: 'Front row' }, { id: 'm', label: 'Middle row' }, { id: 'b', label: 'Back row' }],
     laneColors: ['#7ddc5e', '#5cc84a', '#3fae37'],
-    mirrors: ['none'],
+    // MIRROR: 'lr' plants a matching blade at the mirrored pitch position on
+    // the same row (a symmetric field); 'radial' hangs a reflected copy from
+    // the top edge, pointing down — grass on the "ceiling".
+    mirrors: ['none', 'lr', 'radial'],
     rowY: [0.94, 0.90, 0.86],   // baseline height per row, fraction of stage height
     swaySpeed: 1.6,             // radians/second
     swayAmt: 0.5,               // sway either side of upright, radians
@@ -1159,6 +1166,7 @@ function defaultConfig() {
       mirrorGlow: s.glow, mirrorColorOn: false,
       mirrorMode: (s.id === 'ladder' || s.id === 'barc' || s.id === 'dna') ? 'lr' : 'opp',
       twistSpeed: (s.twistSpeed != null ? s.twistSpeed : 0),
+      showHeads: true,
       wispLife: 0.9, tailStyle: 'taper',
       revAmt: 0, revBass: true, bloomAmt: 0, fireworkAmt: 0,
       noteShape: 'line', vibAmt: 0, vibRate: 5,
@@ -1175,6 +1183,7 @@ function defaultConfig() {
     c.shapes['dna'].windDirB = -1;
   }
   if (c.shapes['parc']) c.shapes['parc'].straighten = 0;
+  if (c.shapes['cloud']) c.shapes['cloud'].gather = 0;
   return c;
 }
 let cfg = defaultConfig();
@@ -2268,10 +2277,20 @@ function buildShapeSections() {
             <option value="-1" selected>Reversed</option>
           </select>
         </div>` : ''}
+        ${s.mirrors && s.mirrors.length > 1 ? `
+        <div class="col-span-2"><span class="lbl text-pink-300">MIRROR (draws a reflected copy of every note)</span>
+          <select data-cfg="shape.${s.id}.mirror">
+            ${s.mirrors.map(m => `<option value="${m}">${MIRROR_LABEL[m] || m}</option>`).join('')}
+          </select>
+        </div>` : ''}
         ${s.id === 'parc' ? `
         <div class="col-span-2"><span class="lbl text-purple-300">STRAIGHTEN <span class="text-gray-300 font-mono" id="ro-straighten-${s.id}">0</span></span>
           <input type="range" data-cfg="shape.${s.id}.straighten" data-readout="ro-straighten-${s.id}" data-snap-mid="0" min="0" max="1" step="0.01" value="0"
             title="Morphs each arc from a curve toward a straight vertical line at the stage edge. 0 = full arc, 1 = straight. Double-click to reset."></div>` : ''}
+        ${s.id === 'cloud' ? `
+        <div class="col-span-2"><span class="lbl text-sky-300">GATHER <span class="text-gray-300 font-mono" id="ro-gather-${s.id}">0</span></span>
+          <input type="range" data-cfg="shape.${s.id}.gather" data-readout="ro-gather-${s.id}" data-snap-mid="0" min="0" max="1" step="0.01" value="0"
+            title="Pulls the Left and Right clouds in toward the Centre cloud. 0 = default spread, 1 = all three stacked. Double-click to reset."></div>` : ''}
         <div><span class="lbl">INK COLOR (Lane 1)</span>
           <input type="color" class="swatch-hex" data-cfg="lane.${s.id}.0.ink" value="${s.ink}"
             style="width:100%;height:26px;padding:1px 2px;border-radius:4px;border:1px solid #555;background:transparent;cursor:pointer;"></div>
@@ -2303,6 +2322,12 @@ function buildShapeSections() {
             <option value="dashed">Dashed</option>
             <option value="dots">Dots</option>
           </select></div>
+        <div><span class="lbl text-gray-300">NOTE HEADS</span>
+          <label class="flex items-center gap-1 mt-1 cursor-pointer"
+            title="Off = don't draw the note glyph itself, only its tail / reverb / bloom. Hides the moving line each sustained note draws (e.g. a swaying grass blade) while keeping the trailing motion.">
+            <input type="checkbox" data-cfg="shape.${s.id}.showHeads" checked>
+            <span class="text-[10px] text-gray-400">Draw the note glyph</span>
+          </label></div>
         <div class="col-span-2"><span class="lbl text-lime-400">NOTE SHAPE</span>
           <select data-cfg="shape.${s.id}.noteShape">${shapeOpts}</select></div>
         ${perLaneShapes}
@@ -2804,7 +2829,7 @@ function applyControl(node) {
     if (key === 'wispLife' || key === 'revAmt' || key === 'bloomAmt' || key === 'fireworkAmt' ||
         key === 'vibAmt' || key === 'vibRate' || key === 'lenScale' || key === 'thickScale' ||
         key === 'offX' || key === 'offY' || key === 'distX' || key === 'distY' || key === 'twistSpeed' ||
-        key === 'windDirA' || key === 'windDirB' || key === 'straighten' ||
+        key === 'windDirA' || key === 'windDirB' || key === 'straighten' || key === 'gather' ||
         key === 'petalAmt' || key === 'petalFall') v = parseFloat(raw);
     cfg.shapes[sid][key] = v;
     // keep the live SHAPES object in sync so renderShapes() sees the new color
@@ -2817,7 +2842,8 @@ function applyControl(node) {
       if (dot) dot.style.background = v;
     }
     if (key === 'offX' || key === 'offY' || key === 'distX' || key === 'distY' || key === 'mirrorMode' || key === 'twistSpeed' ||
-        key === 'helixMode' || key === 'windDirA' || key === 'windDirB' || key === 'straighten') invalidateBlueprint();
+        key === 'helixMode' || key === 'windDirA' || key === 'windDirB' || key === 'straighten' ||
+        key === 'gather' || key === 'mirror') invalidateBlueprint();
     if (key === 'track') { resetScanners(); firstNote = null; if (typeof computeFirstNote === 'function') computeFirstNote(); refreshTabTrackHighlights(); }
   } else if (parts_[0] === 'lane') {
     const [, sid, li, key] = parts_;
@@ -3114,14 +3140,18 @@ function repairConfig(c) {
   const fresh = defaultConfig().shapes;
   SHAPES.forEach(s => {
     const d = fresh[s.id];
-    const cur = c.shapes[s.id];
-    if (!cur) { c.shapes[s.id] = d; return; }
-    if (!Array.isArray(cur.lanes) || cur.lanes.length !== s.lanes.length) {
-      cur.lanes = d.lanes.map((dl, i) => Object.assign({}, dl, cur.lanes && cur.lanes[i]));
+    const saved = c.shapes[s.id];
+    if (!saved) { c.shapes[s.id] = d; return; }
+    // backfill any shape-level keys added since the preset was saved
+    // (e.g. showHeads, gather) without disturbing what the preset set
+    const cur = Object.assign({}, d, saved);
+    c.shapes[s.id] = cur;
+    if (!Array.isArray(saved.lanes) || saved.lanes.length !== s.lanes.length) {
+      cur.lanes = d.lanes.map((dl, i) => Object.assign({}, dl, saved.lanes && saved.lanes[i]));
     } else {
       // backfill lane keys added in newer versions (e.g. noteShape) without
       // disturbing anything the preset already set
-      cur.lanes = cur.lanes.map((cl, i) => Object.assign({}, d.lanes[i], cl));
+      cur.lanes = saved.lanes.map((cl, i) => Object.assign({}, d.lanes[i], cl));
     }
     if (!s.mirrors.includes(cur.mirror)) cur.mirror = d.mirror;
   });
@@ -3431,8 +3461,18 @@ function emitTaper(shape, li, tt, sc, thickS, gc, life, dirSign, reflectMode, mg
   if (amt <= 0.001 || dirSign === 0) return;
   const style = sc.tailStyle || 'taper';    // TAIL STYLE selector
   const norm = Math.min(1, amt / 6);         // scales across the slider's full 0-6 range now
-  const segs = Math.round(3 + 21 * norm);
-  const step = (0.0035 + 0.0150 * norm) * dirSign;
+  // Sample the path more finely than before (was 3 + 21*norm at a ~1.6x
+  // coarser step): on a curving path the old spacing chorded across bends
+  // in a few long straight hops, which read as sharp corners. More, shorter
+  // segments make the tail actually wrap around the curve.
+  let   segs    = Math.round(5 + 30 * norm);
+  const stepMag = 0.0022 + 0.0090 * norm;
+  // A long tail on a small closed loop (a cloud puff, the green ring) used to
+  // run most of the way round the loop and cross back over itself and the
+  // note head. Cap the parameter span it can cover at just under a third of
+  // the loop so it can never meet itself.
+  if (shape.closed) segs = Math.min(segs, Math.max(2, Math.floor(0.30 / stepMag)));
+  const step = stepMag * dirSign;
   // Matches emitGlyph's own head-size formula exactly (including the same
   // 1.9x that dot/circle-kind glyphs use) so the tail is always proportional
   // to however thick the actual note head is currently rendering, whatever
@@ -3470,7 +3510,7 @@ function emitTaper(shape, li, tt, sc, thickS, gc, life, dirSign, reflectMode, mg
   //   comet  — same, weighted toward the head so it thins fast
   //   dashed — thin gapped bars
   const dashed = style === 'dashed';
-  let prev = null, prevF = 1, prevOK = false;
+  let prev = null, prevF = 1, prevOK = false, firstSeg = true;
   for (let k = 0; k <= segs; k++) {
     let f = 1 - k / (segs + 1);              // 1 -> 0 taper
     if (style === 'comet') f *= f;           // front-loaded
@@ -3497,11 +3537,22 @@ function emitTaper(shape, li, tt, sc, thickS, gc, life, dirSign, reflectMode, mg
       const over  = dashed ? 0 : dist * 1.4;
       const soft  = dashed ? R * 0.7 : Math.max(1, R * 0.3);
       const mode  = dashed ? 1 : 0;
-      const hx    = dist / 2 + over;
+      // The capsule nearest the note head has nothing ahead of it to overlap,
+      // so its forward overrun just pokes out past the head — the tail then
+      // looks like it starts in front of the note. Bias that one capsule
+      // fully toward the tail so its head-side end lands exactly on the head.
+      const isFirst = firstSeg;
+      firstSeg = false;
+      let cxm = (prev.x + p.x) / 2, cym = (prev.y + p.y) / 2, hx = dist / 2 + over;
+      if (isFirst && !dashed && over > 0) {
+        cxm += (dx / dist) * (over / 2);
+        cym += (dy / dist) * (over / 2);
+        hx  = dist / 2 + over / 2;
+      }
       const round = dashed ? Math.min(hx, 2.0) : Math.min(hx, R);
       const cover = dashed ? 1 : 3.8;
       const a = life * midF * midF * (dashed ? 0.85 : 1.2) / cover;
-      push((prev.x + p.x) / 2, (prev.y + p.y) / 2, hx, R, angle,
+      push(cxm, cym, hx, R, angle,
            round, soft, 0, gc[0], gc[1], gc[2], a, mode, 0, 0);
       // mirrored copy, so an 'lr'/'radial' mirrored track carries its tail too
       // (in its own MIRROR COLOR if one's set)
@@ -3509,8 +3560,14 @@ function emitTaper(shape, li, tt, sc, thickS, gc, life, dirSign, reflectMode, mg
         const m1 = mirrorPlacement(reflectMode, prev, geo), m2 = mirrorPlacement(reflectMode, p, geo);
         if (m1 && m2) {
           const mdx = m2.x - m1.x, mdy = m2.y - m1.y, mdist = Math.max(0.5, Math.hypot(mdx, mdy));
-          const mover = dashed ? 0 : mdist * 1.4, mhx = mdist / 2 + mover;
-          push((m1.x + m2.x) / 2, (m1.y + m2.y) / 2, mhx, R, Math.atan2(mdy, mdx),
+          const mover = dashed ? 0 : mdist * 1.4;
+          let mcx = (m1.x + m2.x) / 2, mcy = (m1.y + m2.y) / 2, mhx = mdist / 2 + mover;
+          if (isFirst && !dashed && mover > 0) {
+            mcx += (mdx / mdist) * (mover / 2);
+            mcy += (mdy / mdist) * (mover / 2);
+            mhx  = mdist / 2 + mover / 2;
+          }
+          push(mcx, mcy, mhx, R, Math.atan2(mdy, mdx),
                dashed ? Math.min(mhx, 2.0) : Math.min(mhx, R), soft, 0, mc[0], mc[1], mc[2],
                a, mode, 0, 0);
         }
@@ -3760,9 +3817,13 @@ function emitReverb(shape, li, tt, sc, lenS, thickS, ic, gc, life, glowAmt, refl
   // fading); taps/step keep scaling past that so the slider's full 0-2
   // range still does something all the way up instead of going dead partway
   const decayAmt = Math.min(1, amt);
-  const taps  = Math.min(16, Math.round(1 + 12 * amt * weight));
+  let   taps  = Math.min(16, Math.round(1 + 12 * amt * weight));
   const step  = (0.008 + 0.045 * amt) * (0.6 + 0.8 * weight);
   const decay = 0.50 + 0.42 * decayAmt;
+  // on a closed loop, a high amount could push the echoes more than once
+  // around the path and stack them back on the note head — cap the total
+  // span at just under a third of the loop
+  if (shape.closed) taps = Math.min(taps, Math.max(1, Math.floor(0.30 / step)));
 
   let a = life;
   for (let k = 1; k <= taps; k++) {
@@ -4154,19 +4215,24 @@ function renderShapes(t, frameDt) {
           ? lane.noteShape
           : (sc.noteShape || (s.glyph === 'dot' ? 'circle' : 'line'));
 
+        // NOTE HEADS off: still lay the taper / reverb / bloom (the trailing
+        // motion), just skip the note glyph itself — kills the moving line a
+        // sustained note otherwise draws (e.g. a swaying grass blade).
+        const drawHead = sc.showHeads !== false;
+
         // taper first so the note head draws over it
         emitTaper(s, li, tt, sc, thickS, gc, life, dirSign, reflectMode, mgc, laneShapeKey);
-        emitGlyph(s, p, lenS, thickS, ic, gc, life, ga, sc, laneShapeKey);
+        if (drawHead) emitGlyph(s, p, lenS, thickS, ic, gc, life, ga, sc, laneShapeKey);
         emitReverb(s, li, tt, sc, lenS, thickS, ic, gc, life, glowAmt, reflectMode, mgc, laneDirSign, laneShapeKey);
 
         if (sc.mirror === 'opp' && s.opp) {
           const o = s.opp(tt, li);
-          emitGlyph(s, placeAt(s, o.t, o.lane, geo, sc), lenS, thickS, ic, mgc, life, ga, sc, laneShapeKey);
+          if (drawHead) emitGlyph(s, placeAt(s, o.t, o.lane, geo, sc), lenS, thickS, ic, mgc, life, ga, sc, laneShapeKey);
           emitReverb(s, o.lane, o.t, sc, lenS, thickS, ic, mgc, life, glowAmt, null, null, laneDirSign, laneShapeKey);
           emitTaper(s, o.lane, o.t, sc, thickS, mgc, life, dirSign, null, laneShapeKey);
         } else if (reflectMode) {
           const m = mirrorPlacement(reflectMode, p, geo);
-          if (m) emitGlyph(s, m, lenS, thickS, ic, mgc, life, ga, sc, laneShapeKey);
+          if (m && drawHead) emitGlyph(s, m, lenS, thickS, ic, mgc, life, ga, sc, laneShapeKey);
         }
       }
     }
