@@ -11,8 +11,9 @@
 # Rendered captures
 mam-capture*.webm
 
-# Generated RMS-energy data (derived from the local .wav)
+# Generated RMS-energy data (derived from the local .wav) — lives in energy/
 *_energy.json
+energy/
 
 # OS / editor cruft
 Thumbs.db
