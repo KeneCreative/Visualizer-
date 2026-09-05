@@ -89,9 +89,9 @@ def align_midi_to_audio(audio_path, midi_path, output_path, start_time=0.0,
 # --- EXECUTION EXAMPLE ---
 if __name__ == "__main__":
     align_midi_to_audio(
-        audio_path=os.path.join(AUDIO_DIR, 'String_Quartet_No_13_Op_130_I_Adagio_ma_non_troppo_-_Allegro.wav'),
-        midi_path=os.path.join(MIDI_SRC_DIR, 'Beeth.mid'),
-        output_path=os.path.join(MIDI_OUT_DIR, 'Beethoven13m1aligned.mid'),
+        audio_path=os.path.join(AUDIO_DIR, 'Beethoven, String Quartet op.130 4thMVMT.wav'),
+        midi_path=os.path.join(MIDI_SRC_DIR, 'quartet_13_4_(c)edwards (2).mid'),
+        output_path=os.path.join(MIDI_OUT_DIR, 'Beethoven13m4aligned.mid'),
         start_time=0.0,
         clip_duration=None
     )
