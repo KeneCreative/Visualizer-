@@ -27,13 +27,19 @@ import mido.midifiles.meta as _mido_meta
 _mido_meta.check_int = lambda value, low, high: None
 
 
-def align_midi_to_audio(audio_path, midi_path, output_path, start_time=0.0, clip_duration=None):
+def align_midi_to_audio(audio_path, midi_path, output_path, start_time=0.0,
+                        clip_duration=None, hop_length=None):
     print("Loading and clipping audio...")
-    # Restored high sample rate (22050) for maximum precision
     y_audio, sr = librosa.load(audio_path, sr=22050, offset=start_time, duration=clip_duration)
 
-    # Restored tight hop length (512) for millisecond accuracy
-    hop_length = 512
+    # DTW cost is O(frames_midi * frames_audio); 512 (~23 ms/frame) is fine for
+    # a few minutes but a full slow movement (10-15 min) would need a ~30k x 30k
+    # matrix and run out of memory. Scale the hop up with the piece length so
+    # the frame count — and the matrix — stays manageable.
+    dur = librosa.get_duration(y=y_audio, sr=sr)
+    if hop_length is None:
+        hop_length = 512 if dur < 360 else 1024 if dur < 720 else 2048
+    print(f"  {dur:.0f}s audio, hop_length={hop_length} (~{1000 * hop_length / sr:.0f} ms/frame)")
 
     chroma_audio = librosa.feature.chroma_cqt(y=y_audio, sr=sr, hop_length=hop_length)
 
@@ -43,7 +49,11 @@ def align_midi_to_audio(audio_path, midi_path, output_path, start_time=0.0, clip
     chroma_midi = librosa.feature.chroma_cqt(y=y_midi, sr=sr, hop_length=hop_length)
 
     print("Running Dynamic Time Warping (DTW)...")
-    D, wp = librosa.sequence.dtw(X=chroma_midi, Y=chroma_audio, metric='cosine')
+    # Constrain the warp to a diagonal band: a recording and a MIDI of the same
+    # piece never drift more than a fraction of the total length apart, and the
+    # band keeps the cost matrix cheap for long movements.
+    D, wp = librosa.sequence.dtw(X=chroma_midi, Y=chroma_audio, metric='cosine',
+                                 global_constraints=True, band_rad=0.2)
 
     wp = wp[::-1]
 
@@ -79,9 +89,9 @@ def align_midi_to_audio(audio_path, midi_path, output_path, start_time=0.0, clip
 # --- EXECUTION EXAMPLE ---
 if __name__ == "__main__":
     align_midi_to_audio(
-        audio_path=os.path.join(AUDIO_DIR, 'Violin Concerto.wav'),               # <-- recording in audio/
-        midi_path=os.path.join(MIDI_SRC_DIR, 'bwv1041a.mid'),                    # <-- score in midi/source/
-        output_path=os.path.join(MIDI_OUT_DIR, 'BachViolinConcerto1041_1_aligned.mid'),
+        audio_path=os.path.join(AUDIO_DIR, 'String_Quartet_No_13_Op_130_I_Adagio_ma_non_troppo_-_Allegro.wav'),
+        midi_path=os.path.join(MIDI_SRC_DIR, 'Beeth.mid'),
+        output_path=os.path.join(MIDI_OUT_DIR, 'Beethoven13m1aligned.mid'),
         start_time=0.0,
         clip_duration=None
     )
