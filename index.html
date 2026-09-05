@@ -177,6 +177,7 @@
         <span class="lbl text-fuchsia-400">AUDIO ENERGY (RMS JSON)</span>
         <div class="flex items-center gap-2 mt-1">
           <input type="file" id="json-upload" accept=".json,application/json" class="text-[10px] text-gray-400 flex-1">
+          <button type="button" id="json-clear" class="btn-sm" title="Unload the RMS energy JSON — the stage stops reacting to the mix">Clear</button>
         </div>
         <div id="energy-json-status" class="text-[10px] text-gray-500 mt-1">No file loaded — [{"t":0.0,"e":0.0}, ...]</div>
         <div class="mt-2"><span class="lbl">APPLIES TO</span>
@@ -3319,6 +3320,7 @@ document.getElementById('json-upload').addEventListener('change', (e) => {
   const file = e.target.files && e.target.files[0];
   if (file) loadEnergyJson(file);
 });
+document.getElementById('json-clear').addEventListener('click', clearEnergyJson);
 
 const audioFileStatus = document.getElementById('audio-file-status');
 document.getElementById('audio-upload').addEventListener('change', async (e) => {
@@ -4106,6 +4108,16 @@ function loadEnergyJson(file) {
     }
   };
   reader.readAsText(file);
+}
+
+/* Unload the RMS JSON — audioTargetMult / effectiveEnergy fall back to 1
+   on the next animate() frame since both key off audioEnergyData. */
+function clearEnergyJson() {
+  audioEnergyData = null;
+  const inp = document.getElementById('json-upload');
+  if (inp) inp.value = '';
+  const status = document.getElementById('energy-json-status');
+  if (status) status.textContent = 'No file loaded — [{"t":0.0,"e":0.0}, ...]';
 }
 
 function renderShapes(t, frameDt) {
