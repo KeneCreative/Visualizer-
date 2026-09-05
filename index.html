@@ -1018,6 +1018,33 @@ const SHAPES = [
     }
   },
   {
+    id: 'grass', label: 'Grass', glow: '#7ddc5e', ink: '#c8ffb0',
+    glyph: 'bar', half: { len: 15, thick: 2 },
+    // A field of wind-blown blades near the bottom of the stage. Pitch
+    // places a blade across the row (x = t * width); the blade's rotation
+    // sways side to side over REAL elapsed time (currentPlaybackTime, the
+    // same clock DNA's twist uses) rather than note time, so it keeps
+    // moving even while a note holds. The sway phase is offset by x, so it
+    // reads as a breeze travelling across the field instead of every blade
+    // snapping back and forth in lockstep. Front/Middle/Back are three
+    // independent rows at slightly different heights — depth, and three
+    // separate tracks/colours to route.
+    lanes: [{ id: 'f', label: 'Front row' }, { id: 'm', label: 'Middle row' }, { id: 'b', label: 'Back row' }],
+    laneColors: ['#7ddc5e', '#5cc84a', '#3fae37'],
+    mirrors: ['none'],
+    rowY: [0.94, 0.90, 0.86],   // baseline height per row, fraction of stage height
+    swaySpeed: 1.6,             // radians/second
+    swayAmt: 0.5,               // sway either side of upright, radians
+    waveSpeed: 2.4,             // how far the sway phase shifts from one edge to the other
+    place(t, li, g) {
+      const x = t * g.W;
+      const y = g.H * this.rowY[li];
+      const phase = currentPlaybackTime * this.swaySpeed - (x / g.W) * this.waveSpeed;
+      const sway = Math.sin(phase) * this.swayAmt;
+      return { x, y, angle: -Math.PI / 2 + sway };
+    }
+  },
+  {
     id: 'cross', label: 'Crucifix', glow: '#ff5555', ink: '#ffd6d6',
     glyph: 'bar', half: { len: 8, thick: 3 },
     // A Latin cross: long vertical, short top arm, the crossbar set in the
@@ -1556,7 +1583,7 @@ const BP = {
   silver: 'rgba(205,220,255,.28)', lime: 'rgba(168,255,0,.26)', crimson: 'rgba(255,51,102,.28)',
   violet: 'rgba(124,77,255,.28)', pink: 'rgba(255,77,196,.28)', rosegold: 'rgba(255,138,0,.28)',
   boltyellow: 'rgba(255,243,77,.3)', crossred: 'rgba(255,85,85,.3)',
-  cloud: 'rgba(188,216,255,.28)', sun: 'rgba(255,204,51,.3)'
+  cloud: 'rgba(188,216,255,.28)', sun: 'rgba(255,204,51,.3)', grass: 'rgba(125,220,94,.3)'
 };
 
 function line(c, x1, y1, x2, y2, color, w = 1) {
@@ -1718,6 +1745,9 @@ function drawBlueprint(c) {
   traceGuide(c, 'cloud', 2, 140, BP.cloud, 1);
   traceGuide(c, 'sun', 0, 80, BP.sun, 1);           // disc + ray-burst, tucked in a corner
   traceGuide(c, 'sun', 1, 200, BP.sun, 1);
+  traceGuide(c, 'grass', 0, 2, BP.grass, 1);        // three baseline rows near the bottom
+  traceGuide(c, 'grass', 1, 2, BP.grass, 1);
+  traceGuide(c, 'grass', 2, 2, BP.grass, 1);
 }
 
 /* Draws only the currently-selected path's own outline in bold white —
