@@ -37,7 +37,7 @@ _mido_meta.check_int = lambda value, low, high: None
 
 def align_midi_to_audio(audio_path, midi_path, output_path, start_time=0.0,
                         clip_duration=None, hop_length=None, method='dtw',
-                        midi_offset=0.0):
+                        midi_offset=0.0, subseq=None):
     print("Loading and clipping audio...")
     y_audio, sr = librosa.load(audio_path, sr=22050, offset=start_time, duration=clip_duration)
     dur = librosa.get_duration(y=y_audio, sr=sr)
@@ -68,10 +68,12 @@ def align_midi_to_audio(audio_path, midi_path, output_path, start_time=0.0,
     y_midi = ref.synthesize(fs=sr)
     chroma_midi = librosa.feature.chroma_cqt(y=y_midi, sr=sr, hop_length=hop_length)
 
-    # When the MIDI only covers part of the recording (a one-minute loop of a
-    # four-minute track), a plain DTW would smear it across the whole thing.
-    # Subsequence DTW instead finds WHERE that fragment sits in the recording.
-    subseq = midi_dur < 0.6 * dur
+    # When the MIDI only covers part of the recording (a loop, or a cover that
+    # skips the outro), a plain DTW smears it across the whole thing. Subsequence
+    # DTW instead finds WHERE that chunk sits. Auto when the MIDI is clearly
+    # shorter; pass subseq=True/False to force it either way.
+    if subseq is None:
+        subseq = midi_dur < 0.85 * dur
 
     print("Running Dynamic Time Warping (DTW)...")
     if subseq:
@@ -154,8 +156,8 @@ def _apply_warp(midi_data, warp_func, output_path):
 if __name__ == "__main__":
     align_midi_to_audio(
         audio_path=os.path.join(AUDIO_DIR, 'Flashing_Lights.wav'),
-        midi_path=os.path.join(MIDI_SRC_DIR, 'Kanye West - Flashing Lights.mid'),
+        midi_path=os.path.join(MIDI_SRC_DIR, 'FlashingLights.mid'),
         output_path=os.path.join(MIDI_OUT_DIR, 'FlashingLights_aligned.mid'),
-        method='linear',       # grid-locked hip-hop — DTW has nothing to grip
-        midi_offset=0.0,       # both start on the downbeat at t=0
+        method='linear',   # sequenced at 120 bpm, the record sits at ~89 —
+        midi_offset=0.0,   # grid-locked both ways, so just a constant stretch
     )
