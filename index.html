@@ -1047,12 +1047,17 @@ const SHAPES = [
     // emits nothing that frame.
     lanes: [{ id: 'arc', label: 'Arc' }, { id: 'rays', label: 'Rays' }],
     laneColors: ['#ffb020', '#ffd76a'],
-    mirrors: ['none'],
+    // MIRROR: 'radial' drops a reflected copy through the stage centre (a
+    // matching sun-band across the BOTTOM, rays fanning up); 'lr' flips it
+    // left-right (only visible once Position X / Distort make it asymmetric).
+    mirrors: ['none', 'lr', 'radial'],
     cloudDuck: true,       // the rays lane honours cfg.shapes.halfsun.cloudMask
     spanFrac: 0.46,        // half-width of the arc, as a fraction of stage width (≈edge to edge)
     topFrac: 0.06,         // where the arc's ends sit, fraction of stage height
     sag: 0.10,             // how far the arc's middle bows below its ends, fraction of height
-    rayLen: 0.11,          // ray reach, fraction of the smaller stage dimension
+    rayGap: 0.012,         // gap between the rim and where a ray starts, fraction of the smaller dim
+    rayLenMul: 5,          // ray length vs the arc's bar length — long thin spokes
+    rayThickMul: 0.55,     // rays thinner than the arc bars
     place(t, li, g) {
       const halfW = g.W * this.spanFrac;
       const yTop = g.H * this.topFrac;
@@ -1061,13 +1066,16 @@ const SHAPES = [
       const pt = param(u => ({ x: g.CX + halfW * Math.cos(Math.PI * u),
                                y: yTop + sag * Math.sin(Math.PI * u) }), t);
       if (li === 0) return pt;
-      // rays: step outward from a point just above the arc's centre, so they
-      // fan down-and-away — straight down at the middle, splaying at the ends
+      // rays: a long thin spoke that STARTS at the rim (grow) and points
+      // radially away from a focus just above the arc — straight down at the
+      // middle, splaying outward toward the ends
       const dx = pt.x - g.CX;
-      const dy = pt.y - (yTop - g.H * 0.03);
+      const dy = pt.y - (yTop - g.H * 0.04);
       const d = Math.hypot(dx, dy) || 1;
-      const reach = Math.min(g.W, g.H) * this.rayLen;
-      return { x: pt.x + dx / d * reach, y: pt.y + dy / d * reach, angle: Math.atan2(dy, dx) };
+      const gap = Math.min(g.W, g.H) * this.rayGap;
+      return { x: pt.x + dx / d * gap, y: pt.y + dy / d * gap,
+               angle: Math.atan2(dy, dx), grow: 1,
+               lenMul: this.rayLenMul, thickMul: this.rayThickMul };
     }
   },
   {
@@ -3843,6 +3851,10 @@ function emitGlyph(shape, p, lenS, thickS, ic, gc, alpha, glowAmt, sc, noteKey) 
       ? (sc && sc.lenScale != null ? sc.lenScale : 1)
       : lenS);
     hy = shape.half.thick * thickS;
+    // a place() can hand back per-note length / thickness multipliers — e.g.
+    // Half Sun's rays are long thin spokes while its arc bars stay short
+    if (p.lenMul) hx *= p.lenMul;
+    if (p.thickMul) hy *= p.thickMul;
     round = Math.min(hy * 0.5, 2.0);
     // comet/blade are much more readable when they're clearly elongated,
     // so give the line-family SDFs a longer default reach than a plain bar
@@ -3860,12 +3872,17 @@ function emitGlyph(shape, p, lenS, thickS, ic, gc, alpha, glowAmt, sc, noteKey) 
     if (f.hollow) ring = Math.max(1.0, R * f.hollow);
   }
 
+  // 'grow' anchors a bar at p and extends it outward along p.angle (inner end
+  // sits at p) instead of centring it on p — so a ray starts at the sun's rim
+  let px = p.x, py = p.y;
+  if (p.grow) { px += Math.cos(p.angle) * hx; py += Math.sin(p.angle) * hx; }
+
   if (glowAmt > 0.001) {
     const gpad = 6.0 + 14.0 * glowAmt;
-    push(p.x, p.y, hx + gpad * 0.35, hy + gpad * 0.35, p.angle,
+    push(px, py, hx + gpad * 0.35, hy + gpad * 0.35, p.angle,
          round, gpad, ring, gc[0], gc[1], gc[2], alpha * 0.5 * glowAmt, 1, form, n);
   }
-  push(p.x, p.y, hx, hy, p.angle, round, f.soft || 0.75, ring,
+  push(px, py, hx, hy, p.angle, round, f.soft || 0.75, ring,
        ic[0], ic[1], ic[2], alpha, 0, form, n);
 }
 
@@ -4304,8 +4321,12 @@ function renderShapes(t, frameDt) {
 
         // Half Sun: a ray currently behind a cloud puff ducks out entirely
         // (no glyph, no bloom) — it re-emerges, attack and all, once the
-        // cloud clears it.
-        if (s.cloudDuck && lane.id === 'rays' && sc.cloudMask && cloudCoversPoint(p.x, p.y, t)) continue;
+        // cloud clears it. Probe the ray's base and a point along its length.
+        if (s.cloudDuck && lane.id === 'rays' && sc.cloudMask) {
+          const reach = Math.min(geo.W, geo.H) * 0.06;
+          if (cloudCoversPoint(p.x, p.y, t) ||
+              cloudCoversPoint(p.x + Math.cos(p.angle) * reach, p.y + Math.sin(p.angle) * reach, t)) continue;
+        }
 
         // note attack: fires exactly once, the moment a note first becomes
         // active. Firework burst, screen shake AND the reverb bloom all key
