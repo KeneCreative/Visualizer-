@@ -1023,6 +1023,34 @@ const SHAPES = [
     }
   },
   {
+    id: 'halfsun', label: 'Half Sun', glow: '#ffb020', ink: '#ffe6b0',
+    glyph: 'bar', half: { len: 10, thick: 3 },
+    // A sun cresting a horizon: just the upper arc of a disc (not a whole
+    // circle) with rays fanning off the curve. Sits high and centred so it
+    // reads against the Clouds — a warm arc behind their cool puffs. The
+    // Rays lane can DUCK behind any cloud in front of it
+    // (cfg.shapes.halfsun.cloudMask): a covered ray emits nothing that frame.
+    lanes: [{ id: 'arc', label: 'Arc' }, { id: 'rays', label: 'Rays' }],
+    laneColors: ['#ffb020', '#ffd76a'],
+    mirrors: ['none'],
+    cloudDuck: true,       // the rays lane honours cfg.shapes.halfsun.cloudMask
+    fill: 0.16,            // radius as a fraction of the smaller stage dimension
+    cx: 0.5, cy: 0.30,     // centre = the flat horizon line
+    rayReach: 1.32,        // ray-tip distance from centre, in units of R
+    place(t, li, g) {
+      const cx = g.W * this.cx, cy = g.H * this.cy;
+      const R = Math.min(g.W, g.H) * this.fill;
+      // screen-y grows downward, so the dome (above the horizon) is a = PI..TAU
+      const a = Math.PI + t * Math.PI;
+      if (li === 0) {
+        return { x: cx + R * Math.cos(a), y: cy + R * Math.sin(a), angle: a + Math.PI / 2 };
+      }
+      // rays: a bar sitting just outside the rim, lying along the radius
+      const rr = R * this.rayReach;
+      return { x: cx + rr * Math.cos(a), y: cy + rr * Math.sin(a), angle: a };
+    }
+  },
+  {
     id: 'grass', label: 'Grass', glow: '#7ddc5e', ink: '#c8ffb0',
     glyph: 'bar', half: { len: 15, thick: 2 },
     // A field of wind-blown blades near the bottom of the stage. Pitch
@@ -1185,6 +1213,7 @@ function defaultConfig() {
   }
   if (c.shapes['parc']) c.shapes['parc'].straighten = 0;
   if (c.shapes['cloud']) c.shapes['cloud'].gather = 0;
+  if (c.shapes['halfsun']) c.shapes['halfsun'].cloudMask = false;
   return c;
 }
 let cfg = defaultConfig();
@@ -1593,7 +1622,8 @@ const BP = {
   silver: 'rgba(205,220,255,.28)', lime: 'rgba(168,255,0,.26)', crimson: 'rgba(255,51,102,.28)',
   violet: 'rgba(124,77,255,.28)', pink: 'rgba(255,77,196,.28)', rosegold: 'rgba(255,138,0,.28)',
   boltyellow: 'rgba(255,243,77,.3)', crossred: 'rgba(255,85,85,.3)',
-  cloud: 'rgba(188,216,255,.28)', sun: 'rgba(255,204,51,.3)', grass: 'rgba(125,220,94,.3)'
+  cloud: 'rgba(188,216,255,.28)', sun: 'rgba(255,204,51,.3)', grass: 'rgba(125,220,94,.3)',
+  halfsun: 'rgba(255,176,32,.3)'
 };
 
 function line(c, x1, y1, x2, y2, color, w = 1) {
@@ -1758,6 +1788,8 @@ function drawBlueprint(c) {
   traceGuide(c, 'grass', 0, 2, BP.grass, 1);        // three baseline rows near the bottom
   traceGuide(c, 'grass', 1, 2, BP.grass, 1);
   traceGuide(c, 'grass', 2, 2, BP.grass, 1);
+  traceGuide(c, 'halfsun', 0, 90, BP.halfsun, 1);   // upper arc + a ray fan just outside it
+  traceGuide(c, 'halfsun', 1, 48, BP.halfsun, 1);
 }
 
 /* Draws only the currently-selected path's own outline in bold white —
@@ -2292,6 +2324,13 @@ function buildShapeSections() {
         <div class="col-span-2"><span class="lbl text-sky-300">GATHER <span class="text-gray-300 font-mono" id="ro-gather-${s.id}">0</span></span>
           <input type="range" data-cfg="shape.${s.id}.gather" data-readout="ro-gather-${s.id}" data-snap-mid="0" min="0" max="1" step="0.01" value="0"
             title="Pulls the Left and Right clouds in toward the Centre cloud. 0 = default spread, 1 = all three stacked. Double-click to reset."></div>` : ''}
+        ${s.id === 'halfsun' ? `
+        <div class="col-span-2"><span class="lbl text-amber-300">RAYS DUCK BEHIND CLOUDS</span>
+          <label class="flex items-center gap-1 mt-1 cursor-pointer"
+            title="When a Clouds puff is currently over one of the sun's rays, that ray isn't drawn. Needs the Clouds path routed with active notes.">
+            <input type="checkbox" data-cfg="shape.${s.id}.cloudMask">
+            <span class="text-[10px] text-gray-400">A blocked ray doesn't render</span>
+          </label></div>` : ''}
         <div><span class="lbl">INK COLOR (Lane 1)</span>
           <input type="color" class="swatch-hex" data-cfg="lane.${s.id}.0.ink" value="${s.ink}"
             style="width:100%;height:26px;padding:1px 2px;border-radius:4px;border:1px solid #555;background:transparent;cursor:pointer;"></div>
@@ -4120,6 +4159,29 @@ function clearEnergyJson() {
   if (status) status.textContent = 'No file loaded — [{"t":0.0,"e":0.0}, ...]';
 }
 
+/* Is (x, y) inside a Clouds puff that has active notes right now? Half Sun's
+   rays call this to duck behind passing clouds. Mirrors cloud.place()'s centre
+   math and placeAt()'s distort/offset — keep in sync if either changes. */
+function cloudCoversPoint(x, y, t) {
+  const cs = SHAPE_BY_ID['cloud'], csc = cfg.shapes['cloud'];
+  if (!cs || !csc) return false;
+  const R = Math.min(geo.W, geo.H) * cs.fill;
+  const gather = csc.gather != null ? Math.max(0, Math.min(1, csc.gather)) : 0;
+  const dX = csc.distX != null ? csc.distX : 1, dY = csc.distY != null ? csc.distY : 1;
+  const oX = csc.offX || 0, oY = csc.offY || 0;
+  for (let li = 0; li < cs.lanes.length; li++) {
+    if (!csc.lanes[li].on || !getActive('cloud', li, t).length) continue;
+    let ccx = geo.CX + [-1, 0, 1][li] * geo.W * cs.xoff * (1 - gather);
+    let ccy = geo.H * (li === 1 ? 0.12 : 0.17);
+    ccx = geo.CX + (ccx - geo.CX) * dX + oX;
+    ccy = geo.CY + (ccy - geo.CY) * dY + oY;
+    const rx = R * 1.5 * dX, ry = R * 1.5 * 0.55 * dY;   // lump peaks ~1.45R; y squashed 0.55
+    const nx = (x - ccx) / rx, ny = (y - ccy) / ry;
+    if (nx * nx + ny * ny <= 1) return true;
+  }
+  return false;
+}
+
 function renderShapes(t, frameDt) {
   currentPlaybackTime = t;
 
@@ -4168,6 +4230,11 @@ function renderShapes(t, frameDt) {
 
         let p = placeAt(s, tt, li, geo, sc);
         p = applyVibrato(p, sc, t, n.pitch + n.time);
+
+        // Half Sun: a ray currently behind a cloud puff ducks out entirely
+        // (no glyph, no bloom) — it re-emerges, attack and all, once the
+        // cloud clears it.
+        if (s.cloudDuck && lane.id === 'rays' && sc.cloudMask && cloudCoversPoint(p.x, p.y, t)) continue;
 
         // note attack: fires exactly once, the moment a note first becomes
         // active. Firework burst, screen shake AND the reverb bloom all key
