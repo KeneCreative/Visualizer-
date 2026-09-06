@@ -37,7 +37,7 @@ _mido_meta.check_int = lambda value, low, high: None
 
 def align_midi_to_audio(audio_path, midi_path, output_path, start_time=0.0,
                         clip_duration=None, hop_length=None, method='dtw',
-                        midi_offset=0.0, subseq=None):
+                        midi_offset=0.0, subseq=None, transpose='auto'):
     print("Loading and clipping audio...")
     y_audio, sr = librosa.load(audio_path, sr=22050, offset=start_time, duration=clip_duration)
     dur = librosa.get_duration(y=y_audio, sr=sr)
@@ -58,15 +58,43 @@ def align_midi_to_audio(audio_path, midi_path, output_path, start_time=0.0,
         hop_length = 512 if dur < 360 else 1024 if dur < 720 else 2048
     print(f"  {dur:.0f}s audio, hop_length={hop_length} (~{1000 * hop_length / sr:.0f} ms/frame)")
 
-    chroma_audio = librosa.feature.chroma_cqt(y=y_audio, sr=sr, hop_length=hop_length)
-
     print("Synthesizing MIDI reference audio...")
     # Build the reference from pitched instruments only — a synthesised drum kit
     # is just broadband noise in a chroma and drags the alignment around.
     ref = pretty_midi.PrettyMIDI()
     ref.instruments = [i for i in midi_data.instruments if not i.is_drum] or midi_data.instruments
     y_midi = ref.synthesize(fs=sr)
-    chroma_midi = librosa.feature.chroma_cqt(y=y_midi, sr=sr, hop_length=hop_length)
+
+    def chroma(y):
+        C = librosa.feature.chroma_cqt(y=y, sr=sr, hop_length=hop_length)
+        C = np.nan_to_num(C)
+        # a fully-silent frame (a rest in the MIDI, a gap between movements in
+        # the recording) is an all-zero column, and cosine distance to that is
+        # 0/0 = NaN, which blows up the DTW cost matrix. Make silence a flat
+        # non-zero vector so it's simply "far from everything" instead.
+        C[:, C.sum(axis=0) < 1e-8] = 1e-4
+        return C
+
+    chroma_audio = chroma(y_audio)
+    chroma_midi = chroma(y_midi)
+
+    # A pitched-up rip or a period-instrument recording at a different concert
+    # pitch sits a semitone or two off the MIDI, and chroma DTW then matches
+    # nothing (it's key-relative). Detect the shift from the mean chroma
+    # profiles and rotate the reference to match — the notes written out keep
+    # their original pitch, only the matching is transposed.
+    if transpose == 'auto':
+        pa = chroma_audio.mean(axis=1)
+        pm = chroma_midi.mean(axis=1)
+        corr = [float(np.corrcoef(pa, np.roll(pm, k))[0, 1]) for k in range(12)]
+        transpose = int(np.argmax(corr))
+        if transpose:
+            up = transpose if transpose <= 6 else transpose - 12
+            print(f"  recording sits {up:+d} semitone(s) from the MIDI "
+                  f"(profile corr {corr[transpose]:.2f} vs {corr[0]:.2f} at unison) — "
+                  f"matching transposed")
+    if transpose:
+        chroma_midi = np.roll(chroma_midi, transpose, axis=0)
 
     # When the MIDI only covers part of the recording (a loop, or a cover that
     # skips the outro), a plain DTW smears it across the whole thing. Subsequence
@@ -116,10 +144,31 @@ def align_midi_to_audio(audio_path, midi_path, output_path, start_time=0.0,
     # note.end < note.start (stuck / zero-length notes).
     anchor_audio = np.maximum.accumulate(np.asarray(anchor_audio))
 
-    warp_func = interp1d(anchor_midi, anchor_audio, kind='linear', fill_value='extrapolate')
-
     print(f"  matched audio {time_audio_unique[0]:.1f}s -> {time_audio_unique[-1]:.1f}s"
           f"   mean path cost {end_cost:.3f} (0 = perfect, ~1 = unrelated)")
+
+    dm = np.diff(anchor_midi)
+    da = np.diff(anchor_audio)
+    flat_frac = float((da / np.maximum(dm, 1e-6) < 0.15).mean())
+    if flat_frac > 0.5:
+        # A poor chroma match (thin reduction, very different orchestration)
+        # makes the DTW path degenerate into flat runs — whole phrases of MIDI
+        # map onto one instant and every note collapses. The path's endpoints
+        # are still meaningful; its interior isn't. Straight line between them.
+        print(f"  warp is flat over {flat_frac:.0%} of its length (cost "
+              f"{end_cost:.2f}) — falling back to a straight endpoint fit")
+        anchor_midi, anchor_audio = anchor_midi[[0, -1]], anchor_audio[[0, -1]]
+    elif flat_frac > 0.12:
+        # Some flat treads — enforce a floor on how much audio time each step
+        # covers so notes landing on a tread don't collapse, then rescale to
+        # keep the overall span DTW found. Steep parts give back the slack.
+        span = anchor_audio[-1] - anchor_audio[0]
+        da = np.maximum(da, 0.4 * dm)
+        anchor_audio = anchor_audio[0] + np.concatenate([[0], np.cumsum(da)])
+        anchor_audio = anchor_audio[0] + (anchor_audio - anchor_audio[0]) * (span / (anchor_audio[-1] - anchor_audio[0]))
+        print(f"  {flat_frac:.0%} of the warp was flat — floored the step slope to keep notes from collapsing")
+
+    warp_func = interp1d(anchor_midi, anchor_audio, kind='linear', fill_value='extrapolate')
 
     _apply_warp(midi_data, warp_func, output_path)
 
@@ -155,9 +204,10 @@ def _apply_warp(midi_data, warp_func, output_path):
 # --- EXECUTION EXAMPLE ---
 if __name__ == "__main__":
     align_midi_to_audio(
-        audio_path=os.path.join(AUDIO_DIR, 'Flashing_Lights.wav'),
-        midi_path=os.path.join(MIDI_SRC_DIR, 'FlashingLights.mid'),
-        output_path=os.path.join(MIDI_OUT_DIR, 'FlashingLights_aligned.mid'),
-        method='linear',   # sequenced at 120 bpm, the record sits at ~89 —
-        midi_offset=0.0,   # grid-locked both ways, so just a constant stretch
+        audio_path=os.path.join(AUDIO_DIR, 'Mozart_-_Symphony_No_40_in_G_minor_K_550_complete.wav'),
+        midi_path=os.path.join(MIDI_SRC_DIR, 'sinfonia_40_550_1_hisamori.mid'),
+        output_path=os.path.join(MIDI_OUT_DIR, 'Mozart40_1_aligned.mid'),
+        clip_duration=390,   # mvt 1 runs ~0-385s of the complete recording
+        subseq=False,        # so pin MIDI start->clip start rather than let it wander
+        transpose=0,         # both in G minor once the audio is clipped to mvt 1
     )
