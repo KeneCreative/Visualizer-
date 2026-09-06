@@ -204,10 +204,7 @@ def _apply_warp(midi_data, warp_func, output_path):
 # --- EXECUTION EXAMPLE ---
 if __name__ == "__main__":
     align_midi_to_audio(
-        audio_path=os.path.join(AUDIO_DIR, 'Mozart_-_Symphony_No_40_in_G_minor_K_550_complete.wav'),
+        audio_path=os.path.join(AUDIO_DIR, 'Mozarts_Symphony_no_40_-_1st_movement.wav'),
         midi_path=os.path.join(MIDI_SRC_DIR, 'sinfonia_40_550_1_hisamori.mid'),
         output_path=os.path.join(MIDI_OUT_DIR, 'Mozart40_1_aligned.mid'),
-        clip_duration=390,   # mvt 1 runs ~0-385s of the complete recording
-        subseq=False,        # so pin MIDI start->clip start rather than let it wander
-        transpose=0,         # both in G minor once the audio is clipped to mvt 1
     )
