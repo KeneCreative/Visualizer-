@@ -1245,7 +1245,12 @@ function defaultConfig() {
   }
   if (c.shapes['parc']) c.shapes['parc'].straighten = 0;
   if (c.shapes['cloud']) c.shapes['cloud'].gather = 0;
-  if (c.shapes['halfsun']) { c.shapes['halfsun'].cloudMask = false; c.shapes['halfsun'].mirrorRays = true; }
+  if (c.shapes['halfsun']) {
+    c.shapes['halfsun'].cloudMask = false;
+    c.shapes['halfsun'].mirrorRays = true;
+    c.shapes['halfsun'].rayCount = 7;
+    c.shapes['halfsun'].raySpan = 0.6;
+  }
   return c;
 }
 let cfg = defaultConfig();
@@ -2439,7 +2444,13 @@ function buildShapeSections() {
             title="With MIRROR on, also mirror the Rays lane. Off = the mirrored copy is just the arc, no second ray fan.">
             <input type="checkbox" data-cfg="shape.${s.id}.mirrorRays" checked>
             <span class="text-[10px] text-gray-400">Include the rays in the mirror</span>
-          </label></div>` : ''}
+          </label></div>
+        <div><span class="lbl text-amber-300">RAY COUNT <span class="text-gray-300 font-mono" id="ro-rayCount-${s.id}">7</span></span>
+          <input type="range" data-cfg="shape.${s.id}.rayCount" data-readout="ro-rayCount-${s.id}" min="1" max="19" step="1" value="7"
+            title="How many spokes each Rays note fans out — 1 is a single spoke, higher makes a full sunburst"></div>
+        <div><span class="lbl text-amber-300">RAY SPREAD <span class="text-gray-300 font-mono" id="ro-raySpan-${s.id}">0.6</span></span>
+          <input type="range" data-cfg="shape.${s.id}.raySpan" data-readout="ro-raySpan-${s.id}" min="0.05" max="1" step="0.05" value="0.6"
+            title="How wide across the arc the ray fan reaches — 1 spans the whole arc"></div>` : ''}
         <div><span class="lbl">INK COLOR (Lane 1)</span>
           <input type="color" class="swatch-hex" data-cfg="lane.${s.id}.0.ink" value="${s.ink}"
             style="width:100%;height:26px;padding:1px 2px;border-radius:4px;border:1px solid #555;background:transparent;cursor:pointer;"></div>
@@ -2994,6 +3005,7 @@ function applyControl(node) {
         key === 'vibAmt' || key === 'vibRate' || key === 'lenScale' || key === 'thickScale' ||
         key === 'offX' || key === 'offY' || key === 'distX' || key === 'distY' || key === 'twistSpeed' ||
         key === 'windDirA' || key === 'windDirB' || key === 'straighten' || key === 'gather' ||
+        key === 'rayCount' || key === 'raySpan' ||
         key === 'petalAmt' || key === 'petalFall') v = parseFloat(raw);
     cfg.shapes[sid][key] = v;
     // keep the live SHAPES object in sync so renderShapes() sees the new color
@@ -4465,6 +4477,28 @@ function renderShapes(t, frameDt) {
         emitTaper(s, li, tt, sc, thickS, gc, life, dirSign, reflectMode, mgc, laneShapeKey);
         if (drawHead) emitGlyph(s, p, lenS, thickS, ic, gc, life, ga, sc, laneShapeKey);
         emitReverb(s, li, tt, sc, lenS, thickS, ic, gc, life, glowAmt, reflectMode, mgc, laneDirSign, laneShapeKey);
+
+        // Half Sun: a single Rays note fans a whole burst of spokes across
+        // the arc (RAY COUNT / RAY SPREAD) so one voice lights up the sun
+        if (s.id === 'halfsun' && lane.id === 'rays' && drawHead && (sc.rayCount || 1) > 1) {
+          const cnt = Math.min(19, Math.round(sc.rayCount));
+          const span = sc.raySpan != null ? sc.raySpan : 0.55;
+          const probe = Math.min(geo.W, geo.H) * 0.06;
+          for (let k = 0; k < cnt; k++) {
+            const frac = cnt > 1 ? k / (cnt - 1) : 0.5;      // 0..1 across the fan
+            let et = tt + (frac - 0.5) * span;
+            if (et <= 0.001 || et >= 0.999) continue;
+            const rp = applyVibrato(placeAt(s, et, li, geo, sc), sc, t, n.pitch + n.time + k * 7.3);
+            if (sc.cloudMask && (cloudCoversPoint(rp.x, rp.y, t) ||
+                cloudCoversPoint(rp.x + Math.cos(rp.angle) * probe, rp.y + Math.sin(rp.angle) * probe, t))) continue;
+            const dim = 0.45 + 0.55 * (1 - Math.abs(frac - 0.5) * 2);   // brighter toward the centre of the fan
+            emitGlyph(s, rp, lenS * (0.72 + 0.28 * dim), thickS, ic, gc, life * dim, ga * dim, sc, laneShapeKey);
+            if (reflectMode) {
+              const m = mirrorPlacement(reflectMode, rp, geo);
+              if (m) emitGlyph(s, m, lenS * (0.72 + 0.28 * dim), thickS, ic, mgc, life * dim, ga * dim, sc, laneShapeKey);
+            }
+          }
+        }
 
         if (sc.mirror === 'opp' && s.opp) {
           const o = s.opp(tt, li);
