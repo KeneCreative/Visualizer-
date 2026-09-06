@@ -1025,29 +1025,35 @@ const SHAPES = [
   {
     id: 'halfsun', label: 'Half Sun', glow: '#ffb020', ink: '#ffe6b0',
     glyph: 'bar', half: { len: 10, thick: 3 },
-    // A sun cresting a horizon: just the upper arc of a disc (not a whole
-    // circle) with rays fanning off the curve. Sits high and centred so it
-    // reads against the Clouds — a warm arc behind their cool puffs. The
-    // Rays lane can DUCK behind any cloud in front of it
-    // (cfg.shapes.halfsun.cloudMask): a covered ray emits nothing that frame.
+    // A wide, shallow arc spanning the top of the stage — like the Blue Top
+    // Arc but hugging the top edge — with rays fanning DOWN off it into the
+    // stage. A second Clouds companion: the sun's light comes from above,
+    // its rays hang past the cloud band. The Rays lane can DUCK behind any
+    // cloud in front of it (cfg.shapes.halfsun.cloudMask): a covered ray
+    // emits nothing that frame.
     lanes: [{ id: 'arc', label: 'Arc' }, { id: 'rays', label: 'Rays' }],
     laneColors: ['#ffb020', '#ffd76a'],
     mirrors: ['none'],
     cloudDuck: true,       // the rays lane honours cfg.shapes.halfsun.cloudMask
-    fill: 0.16,            // radius as a fraction of the smaller stage dimension
-    cx: 0.5, cy: 0.30,     // centre = the flat horizon line
-    rayReach: 1.32,        // ray-tip distance from centre, in units of R
+    spanFrac: 0.46,        // half-width of the arc, as a fraction of stage width (≈edge to edge)
+    topFrac: 0.06,         // where the arc's ends sit, fraction of stage height
+    sag: 0.10,             // how far the arc's middle bows below its ends, fraction of height
+    rayLen: 0.11,          // ray reach, fraction of the smaller stage dimension
     place(t, li, g) {
-      const cx = g.W * this.cx, cy = g.H * this.cy;
-      const R = Math.min(g.W, g.H) * this.fill;
-      // screen-y grows downward, so the dome (above the horizon) is a = PI..TAU
-      const a = Math.PI + t * Math.PI;
-      if (li === 0) {
-        return { x: cx + R * Math.cos(a), y: cy + R * Math.sin(a), angle: a + Math.PI / 2 };
-      }
-      // rays: a bar sitting just outside the rim, lying along the radius
-      const rr = R * this.rayReach;
-      return { x: cx + rr * Math.cos(a), y: cy + rr * Math.sin(a), angle: a };
+      const halfW = g.W * this.spanFrac;
+      const yTop = g.H * this.topFrac;
+      const sag = g.H * this.sag;
+      // t=0 → right end, t=0.5 → middle (lowest), t=1 → left end
+      const pt = param(u => ({ x: g.CX + halfW * Math.cos(Math.PI * u),
+                               y: yTop + sag * Math.sin(Math.PI * u) }), t);
+      if (li === 0) return pt;
+      // rays: step outward from a point just above the arc's centre, so they
+      // fan down-and-away — straight down at the middle, splaying at the ends
+      const dx = pt.x - g.CX;
+      const dy = pt.y - (yTop - g.H * 0.03);
+      const d = Math.hypot(dx, dy) || 1;
+      const reach = Math.min(g.W, g.H) * this.rayLen;
+      return { x: pt.x + dx / d * reach, y: pt.y + dy / d * reach, angle: Math.atan2(dy, dx) };
     }
   },
   {
