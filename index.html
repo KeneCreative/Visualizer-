@@ -1057,8 +1057,9 @@ const SHAPES = [
     topFrac: 0.06,         // where the arc's ends sit, fraction of stage height
     sag: 0.10,             // how far the arc's middle bows below its ends, fraction of height
     rayGap: 0.012,         // gap between the rim and where a ray starts, fraction of the smaller dim
-    rayLenMul: 5,          // ray length vs the arc's bar length — long thin spokes
+    rayLenMul: 3,          // ray length vs the arc's bar length — long thin spokes (tune with NOTE LENGTH)
     rayThickMul: 0.55,     // rays thinner than the arc bars
+    rayFocus: 0.55,        // ray fan tightness: focus point above the arc, fraction of stage width
     place(t, li, g) {
       const halfW = g.W * this.spanFrac;
       const yTop = g.H * this.topFrac;
@@ -1068,10 +1069,10 @@ const SHAPES = [
                                y: yTop + sag * Math.sin(Math.PI * u) }), t);
       if (li === 0) return pt;
       // rays: a long thin spoke that STARTS at the rim (grow) and points
-      // radially away from a focus just above the arc — straight down at the
-      // middle, splaying outward toward the ends
+      // radially away from a focus well above the arc — straight down at the
+      // middle, splaying ~50° at the ends, so the fan stays even
       const dx = pt.x - g.CX;
-      const dy = pt.y - (yTop - g.H * 0.04);
+      const dy = pt.y - (yTop - g.W * this.rayFocus);
       const d = Math.hypot(dx, dy) || 1;
       const gap = Math.min(g.W, g.H) * this.rayGap;
       return { x: pt.x + dx / d * gap, y: pt.y + dy / d * gap,
@@ -1167,8 +1168,10 @@ const NOTE_SHAPE_LABEL = {
 /* Generic mirroring. Glyphs are 180deg-symmetric, so reflecting the
    heading by (PI - angle) and negating it are equivalent. */
 function mirrorPlacement(mode, p, g) {
-  if (mode === 'lr')     return { x: g.W - p.x, y: p.y, angle: Math.PI - p.angle };
-  if (mode === 'radial') return { x: 2 * g.CX - p.x, y: 2 * g.CY - p.y, angle: p.angle + Math.PI };
+  // spread p first so per-note extras (lenMul / thickMul / grow — Half Sun's
+  // rays) carry across; the mirrored angle already flips the grow direction
+  if (mode === 'lr')     return { ...p, x: g.W - p.x, y: p.y, angle: Math.PI - p.angle };
+  if (mode === 'radial') return { ...p, x: 2 * g.CX - p.x, y: 2 * g.CY - p.y, angle: p.angle + Math.PI };
   return null;
 }
 
@@ -1242,7 +1245,7 @@ function defaultConfig() {
   }
   if (c.shapes['parc']) c.shapes['parc'].straighten = 0;
   if (c.shapes['cloud']) c.shapes['cloud'].gather = 0;
-  if (c.shapes['halfsun']) c.shapes['halfsun'].cloudMask = false;
+  if (c.shapes['halfsun']) { c.shapes['halfsun'].cloudMask = false; c.shapes['halfsun'].mirrorRays = true; }
   return c;
 }
 let cfg = defaultConfig();
@@ -2430,6 +2433,12 @@ function buildShapeSections() {
             title="When a Clouds puff is currently over one of the sun's rays, that ray isn't drawn. Needs the Clouds path routed with active notes.">
             <input type="checkbox" data-cfg="shape.${s.id}.cloudMask">
             <span class="text-[10px] text-gray-400">A blocked ray doesn't render</span>
+          </label></div>
+        <div class="col-span-2"><span class="lbl text-amber-300">MIRROR RAYS</span>
+          <label class="flex items-center gap-1 mt-1 cursor-pointer"
+            title="With MIRROR on, also mirror the Rays lane. Off = the mirrored copy is just the arc, no second ray fan.">
+            <input type="checkbox" data-cfg="shape.${s.id}.mirrorRays" checked>
+            <span class="text-[10px] text-gray-400">Include the rays in the mirror</span>
           </label></div>` : ''}
         <div><span class="lbl">INK COLOR (Lane 1)</span>
           <input type="color" class="swatch-hex" data-cfg="lane.${s.id}.0.ink" value="${s.ink}"
@@ -3950,7 +3959,8 @@ function applyVibrato(p, sc, t, seed) {
   const rate  = sc.vibRate || 5;
   const phase = (seed * 0.37) % 1;
   const w = Math.sin((t * rate + phase) * TAU) * amt;
-  return { x: p.x - Math.sin(p.angle) * w,
+  return { ...p,
+           x: p.x - Math.sin(p.angle) * w,
            y: p.y + Math.cos(p.angle) * w,
            angle: p.angle };
 }
@@ -4392,7 +4402,7 @@ function renderShapes(t, frameDt) {
           started.add(n);
           spawnFirework(p, sc, vs, laneCol);
           spawnBloom(p, sc, tt, laneCol);
-          if (sc.mirror !== 'none') {
+          if (sc.mirror !== 'none' && !(lane.id === 'rays' && sc.mirrorRays === false)) {
             if (sc.mirror === 'opp' && s.opp) {
               const o = s.opp(tt, li);
               spawnBloom(placeAt(s, o.t, o.lane, geo, sc), sc, o.t, mirrorCol);
@@ -4412,7 +4422,7 @@ function renderShapes(t, frameDt) {
         if (age > dur && !wisped.has(n)) {
           wisped.add(n);
           spawnPetals(p, sc, vs, laneInk);
-          if (sc.mirror !== 'none') {
+          if (sc.mirror !== 'none' && !(lane.id === 'rays' && sc.mirrorRays === false)) {
             if (sc.mirror === 'opp' && s.opp) {
               const o = s.opp(tt, li);
               spawnPetals(placeAt(s, o.t, o.lane, geo, sc), sc, vs, laneInk);
@@ -4431,7 +4441,11 @@ function renderShapes(t, frameDt) {
         // emitted point, so taper/reverb take it directly and draw both
         // copies themselves. 'opp' mirrors in path-space instead (a
         // different t/lane, not a point reflection) so it's handled below.
-        const reflectMode = (sc.mirror === 'lr' || sc.mirror === 'radial') ? sc.mirror : null;
+        let reflectMode = (sc.mirror === 'lr' || sc.mirror === 'radial') ? sc.mirror : null;
+        // Half Sun: MIRROR RAYS off leaves the Rays lane out of the mirror,
+        // so a mirrored Half Sun is a clean arc without a second ray fan
+        const skipMirror = lane.id === 'rays' && sc.mirrorRays === false;
+        if (skipMirror) reflectMode = null;
         const laneDirSign = lane.dir === 'backward' ? -1 : 1;
         const dirSign = laneDirSign * (n.step || 0);
 
