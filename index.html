@@ -139,6 +139,7 @@
     <div id="main-body">
       <p class="text-xs text-gray-400 mb-3">Load a MIDI file to map tracks onto geometry.</p>
       <input type="file" id="midi-upload" accept=".mid,.midi">
+      <div id="midi-file-status" class="text-[10px] text-gray-500 mt-1">No MIDI loaded.</div>
       <div id="load-error" class="text-xs text-rose-400 mt-2 collapsed"></div>
 
       <div class="grid grid-cols-3 gap-2 mt-3">
@@ -2215,40 +2216,75 @@ window.addEventListener('keydown', e => {
 });
 
 /* ============================================================
+   SESSION STORE  (IndexedDB) — so a refresh keeps the last MIDI and
+   energy JSON, not just the cfg that localStorage already holds.
+   ============================================================ */
+const idb = (() => {
+  let dbP = null;
+  const open = () => dbP || (dbP = new Promise((res, rej) => {
+    const r = indexedDB.open('mam-session', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('kv');
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  }));
+  const tx = async (mode, fn) => {
+    const db = await open();
+    return new Promise((res, rej) => {
+      const t = db.transaction('kv', mode);
+      const rq = fn(t.objectStore('kv'));
+      t.oncomplete = () => res(rq && rq.result);
+      t.onerror = () => rej(t.error);
+    });
+  };
+  return {
+    get: k => tx('readonly', s => s.get(k)).catch(() => null),
+    set: (k, v) => tx('readwrite', s => s.put(v, k)).catch(() => {}),
+    del: k => tx('readwrite', s => s.delete(k)).catch(() => {}),
+  };
+})();
+
+/* ============================================================
    MIDI LOAD
    ============================================================ */
 const errEl = document.getElementById('load-error');
+function showError(msg) { errEl.textContent = msg; errEl.classList.remove('collapsed'); }
+
+/* Parse an ArrayBuffer of MIDI bytes and wire it up. `restored` skips the
+   re-persist (we just read it back from IndexedDB) and is quieter about it. */
+function applyMidiBuffer(buf, name, restored) {
+  const midi = new Midi(buf);
+  if (!midi.tracks.some(t => t.notes.length)) throw new Error('No notes found in this file.');
+  stopAll(); disposeAudio();
+  parsedMidi = midi;
+  normTracks = normalizeTracks(midi);
+  if (typeof autofitLockRange === 'function') autofitLockRange();
+  songDuration = midi.duration || 1;
+  trackMeta = midi.tracks
+    .map((t, i) => ({ index: i, name: t.name || (t.instrument && t.instrument.name) || `Track ${i + 1}`, count: t.notes.length }))
+    .filter(t => t.count > 0);
+  errEl.classList.add('collapsed');
+  populateTrackSelects();
+  buildMixer();
+  resetScanners();
+  seekEl.disabled = false; playBtn.disabled = false; stopBtn.disabled = false;
+  playBtn.textContent = 'Play';
+  document.getElementById('time-total').textContent = fmt(songDuration);
+  const st = document.getElementById('midi-file-status');
+  if (st && name) st.textContent = (restored ? 'Restored: ' : '') + name;
+  if (!restored) idb.set('midi', { name, buf });
+}
+
 document.getElementById('midi-upload').addEventListener('change', e => {
   const file = e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
   reader.onerror = () => showError('Could not read that file.');
   reader.onload = ev => {
-    try {
-      const midi = new Midi(ev.target.result);
-      if (!midi.tracks.some(t => t.notes.length)) throw new Error('No notes found in this file.');
-      stopAll(); disposeAudio();
-      parsedMidi = midi;
-      normTracks = normalizeTracks(midi);
-      if (typeof autofitLockRange === 'function') autofitLockRange();
-      songDuration = midi.duration || 1;
-      trackMeta = midi.tracks
-        .map((t, i) => ({ index: i, name: t.name || (t.instrument && t.instrument.name) || `Track ${i + 1}`, count: t.notes.length }))
-        .filter(t => t.count > 0);
-      errEl.classList.add('collapsed');
-      populateTrackSelects();
-      buildMixer();
-      resetScanners();
-      seekEl.disabled = false; playBtn.disabled = false; stopBtn.disabled = false;
-      playBtn.textContent = 'Play';
-      document.getElementById('time-total').textContent = fmt(songDuration);
-    } catch (err) {
-      showError('Could not parse MIDI: ' + err.message);
-    }
+    try { applyMidiBuffer(ev.target.result, file.name); }
+    catch (err) { showError('Could not parse MIDI: ' + err.message); }
   };
   reader.readAsArrayBuffer(file);
 });
-function showError(msg) { errEl.textContent = msg; errEl.classList.remove('collapsed'); }
 
 /* ============================================================
    PANEL GENERATION  (derived entirely from SHAPES)
@@ -2811,16 +2847,31 @@ function randomizeColors() {
 
 function populateTrackSelects() {
   const opts = trackMeta.map(t => `<option value="${t.index}">${escapeHtml(t.name)} (${t.count})</option>`).join('');
+  const isTrack = v => trackMeta.some(t => String(t.index) === String(v));
+  // If the config already carries a real routing (a restored session, a
+  // second MIDI with the same layout) keep it — only fall back to the
+  // round-robin defaults when nothing is routed yet (a fresh start).
+  const alreadyRouted = SHAPES.some(s => {
+    const tk = cfg.shapes[s.id] && cfg.shapes[s.id].track;
+    return tk != null && tk !== 'none' && isTrack(tk);
+  });
   document.querySelectorAll('select[data-cfg^="shape."][data-cfg$=".track"]').forEach((sel, i) => {
     sel.innerHTML = `<option value="none">-- None --</option>` + opts;
-    const def = trackMeta[i % trackMeta.length];
-    if (def) sel.value = String(def.index);
+    const sid = sel.dataset.cfg.split('.')[1];
+    const cur = cfg.shapes[sid] ? cfg.shapes[sid].track : 'none';
+    sel.value = alreadyRouted
+      ? (cur === 'none' || isTrack(cur) ? String(cur) : 'none')
+      : String((trackMeta[i % trackMeta.length] || { index: 'none' }).index);
     sel.dispatchEvent(new Event('change', { bubbles: true }));
   });
   document.querySelectorAll('select[data-cfg^="lane."][data-cfg$=".track"]').forEach(sel => {
     const label = sel.querySelector('option') ? sel.querySelector('option').textContent : 'same';
     sel.innerHTML = `<option value="shared">${escapeHtml(label)}</option>` + opts;
-    sel.value = 'shared';
+    const parts = sel.dataset.cfg.split('.');   // lane.<sid>.<li>.track
+    const laneCfg = cfg.shapes[parts[1]] && cfg.shapes[parts[1]].lanes[+parts[2]];
+    const cur = laneCfg ? laneCfg.track : 'shared';
+    sel.value = (cur === 'shared' || isTrack(cur)) ? String(cur) : 'shared';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
   });
   const eqSel = document.getElementById('eq-track');
   if (eqSel) { const prev = eqSel.value; eqSel.innerHTML = `<option value="all">All tracks</option>` + opts;
@@ -4203,18 +4254,22 @@ function getGlobalEnergy(t) {
   return a.e + (b.e - a.e) * frac;
 }
 
+function applyEnergyData(parsed, restored) {
+  if (!Array.isArray(parsed) || !parsed.every(p => typeof p.t === 'number' && typeof p.e === 'number')) {
+    throw new Error('Expected an array of {t, e} objects');
+  }
+  parsed.sort((a, b) => a.t - b.t);   // getGlobalEnergy assumes sorted
+  audioEnergyData = parsed;
+  const status = document.getElementById('energy-json-status');
+  if (status) status.textContent = (restored ? 'Restored ' : 'Loaded ') + parsed.length +
+    ' frames (' + parsed[0].t.toFixed(1) + 's-' + parsed[parsed.length - 1].t.toFixed(1) + 's)';
+  if (!restored) idb.set('energy', parsed);
+}
 function loadEnergyJson(file) {
   const reader = new FileReader();
   reader.onload = (ev) => {
     try {
-      const parsed = JSON.parse(ev.target.result);
-      if (!Array.isArray(parsed) || !parsed.every(p => typeof p.t === 'number' && typeof p.e === 'number')) {
-        throw new Error('Expected an array of {t, e} objects');
-      }
-      parsed.sort((a, b) => a.t - b.t);   // defensive — getGlobalEnergy assumes sorted
-      audioEnergyData = parsed;
-      const status = document.getElementById('energy-json-status');
-      if (status) status.textContent = `Loaded ${parsed.length} frames (${parsed[0].t.toFixed(1)}s\u2013${parsed[parsed.length - 1].t.toFixed(1)}s)`;
+      applyEnergyData(JSON.parse(ev.target.result));
     } catch (err) {
       const status = document.getElementById('energy-json-status');
       if (status) status.textContent = 'Invalid file — expected [{"t":0.0,"e":0.0}, ...]';
@@ -4227,6 +4282,7 @@ function loadEnergyJson(file) {
    on the next animate() frame since both key off audioEnergyData. */
 function clearEnergyJson() {
   audioEnergyData = null;
+  idb.del('energy');
   const inp = document.getElementById('json-upload');
   if (inp) inp.value = '';
   const status = document.getElementById('energy-json-status');
@@ -4607,6 +4663,21 @@ function bindEqControl(id, key) {
   .forEach(([id, key]) => bindEqControl(id, key));
 
 loadLocal();
+
+/* Bring back the last MIDI and energy JSON from IndexedDB so a refresh
+   doesn't leave a blank stage. (The backing-track WAV is too big to stash
+   and still needs re-picking.) cfg itself already came back via loadLocal. */
+(async () => {
+  try {
+    const m = await idb.get('midi');
+    if (m && m.buf) applyMidiBuffer(m.buf, m.name, true);
+  } catch (e) {}
+  try {
+    const en = await idb.get('energy');
+    if (Array.isArray(en) && en.length) applyEnergyData(en, true);
+  } catch (e) {}
+})();
+
 requestAnimationFrame(animate);
 </script>
 </body>
