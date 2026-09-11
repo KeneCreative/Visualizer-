@@ -204,7 +204,7 @@ def _apply_warp(midi_data, warp_func, output_path):
 # --- EXECUTION EXAMPLE ---
 if __name__ == "__main__":
     align_midi_to_audio(
-        audio_path=os.path.join(AUDIO_DIR, 'Mozarts_Symphony_no_40_-_1st_movement.wav'),
-        midi_path=os.path.join(MIDI_SRC_DIR, 'sinfonia_40_550_1_hisamori.mid'),
-        output_path=os.path.join(MIDI_OUT_DIR, 'Mozart40_1_aligned.mid'),
+        audio_path=os.path.join(AUDIO_DIR, 'String_Quartet_in_F_Major_Op_135_I_Allegretto.wav'),
+        midi_path=os.path.join(MIDI_SRC_DIR, 'quartet_16_1_(c)edwards.mid'),
+        output_path=os.path.join(MIDI_OUT_DIR, 'Beethoven135_1_aligned.mid'),
     )
