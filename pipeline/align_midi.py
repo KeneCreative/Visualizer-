@@ -494,3 +494,10 @@ if __name__ == "__main__":
                           # this length (~8s DTW) and tightens onset accuracy through the piece
         refine_hop=128,   # ~6 ms second pass
     )
+    # BY-EAR PATCH (not reproduced by the run above — reapply if you regenerate
+    # this file from scratch): the cello's C2 right before Violino I's opening
+    # entrance has a 6th harmonic landing on the violin's own G4, so nothing
+    # automatic can reliably place that entrance (see _snap_entrances's
+    # docstring). Kenneth listened and placed it directly: the viola/cello's
+    # note ends at 3.663s; Violino I's 3-note entrance (G4/A4/A#4) was moved
+    # from 3.673s to 3.971s (+0.30s), everything else in 0-6s left untouched.
