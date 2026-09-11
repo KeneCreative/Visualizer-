@@ -46,7 +46,8 @@ _mido_meta.check_int = lambda value, low, high: None
 def align_midi_to_audio(audio_path, midi_path, output_path, start_time=0.0,
                         clip_duration=None, hop_length=None, method='dtw',
                         midi_offset=0.0, subseq=None, transpose='auto',
-                        onset_weight=0.8, refine=True, refine_hop=256):
+                        onset_weight=0.8, refine=True, refine_hop=256,
+                        extend_tail=True):
     print("Loading and clipping audio...")
     y_audio, sr = librosa.load(audio_path, sr=22050, offset=start_time, duration=clip_duration)
     dur = librosa.get_duration(y=y_audio, sr=sr)
@@ -56,7 +57,7 @@ def align_midi_to_audio(audio_path, midi_path, output_path, start_time=0.0,
 
     if method == 'linear':
         warp_func = _linear_warp(y_audio, sr, dur, midi_data, midi_offset)
-        _apply_warp(midi_data, warp_func, output_path)
+        _apply_warp(midi_data, warp_func, output_path, y_audio=y_audio, sr=sr)
         return
 
     # DTW cost is O(frames_midi * frames_audio); 512 (~23 ms/frame) is fine for
@@ -181,7 +182,13 @@ def align_midi_to_audio(audio_path, midi_path, output_path, start_time=0.0,
 
     warp_func = interp1d(anchor_midi, anchor_audio, kind='linear', fill_value='extrapolate')
 
-    _apply_warp(midi_data, warp_func, output_path)
+    # Only meaningful for a full-piece (non-subsequence) match: there the MIDI
+    # is meant to cover the whole recording, so its own real ending IS "the
+    # tail of the recording". A subsequence match's MIDI is only a fragment
+    # of a longer file and has no business being stretched out to its end.
+    tail = _tail_silence_start(y_audio, sr) if (extend_tail and not subseq) else None
+    _apply_warp(midi_data, warp_func, output_path, extend_final_to=tail,
+               y_audio=y_audio, sr=sr)
 
 
 def _norm_cols(C):
@@ -236,11 +243,21 @@ def _stack(chroma, onset, weight):
 
 def _refine_path(y_audio, midi_data, sr, hop, onset_weight, transpose,
                  coarse_midi_t, coarse_audio_t, midi_dur, audio_dur,
-                 chunk_s=24.0, overlap_s=6.0, pad_s=1.5):
+                 chunk_s=24.0, overlap_s=6.0, pad_s=1.5, edge_pad_s=12.0):
     """Re-match at a fine hop, one chunk of MIDI at a time, each searched only
     inside the audio window the coarse path already found (plus a little pad).
     A full fine-hop DTW over a whole movement would need a multi-GB matrix;
-    these chunk matrices are a few tens of MB and run in a moment each."""
+    these chunk matrices are a few tens of MB and run in a moment each.
+
+    Plain (non-subsequence) DTW is FORCED to end its path at the literal last
+    frame of both sequences, even if that's into a fermata's decay or trailing
+    room tone the chroma/onset features don't actually resemble the score's
+    last notes. So the coarse pass's placement is least trustworthy exactly at
+    the two ends of the piece — the first and last chunks here get a much
+    wider search window (out to the true file boundary, not just the coarse
+    guess) and skip the drift sanity check that protects the interior chunks,
+    since "drifted far from a guess we already know is untrustworthy here"
+    isn't evidence of a bad match the way it is mid-piece."""
     print(f"Refining at hop_length={hop} (~{1000 * hop / sr:.0f} ms/frame)...")
     ca, oa = _audio_features(y_audio, sr, hop)
     cm, om = _midi_features(midi_data, sr, hop)
@@ -257,11 +274,14 @@ def _refine_path(y_audio, midi_data, sr, hop, onset_weight, transpose,
     kept = 0
     for t0 in starts:
         t1 = min(t0 + chunk_s, midi_dur)
+        is_first, is_last = (t0 <= 0), (t1 >= midi_dur)
         mi0, mi1 = int(t0 * fps), min(int(t1 * fps), Fm.shape[1])
         if mi1 - mi0 < int(2 * fps):
             continue
-        a0 = float(coarse(t0)) - pad_s
-        a1 = float(coarse(t1)) + pad_s
+        pad0 = edge_pad_s if is_first else pad_s
+        pad1 = edge_pad_s if is_last else pad_s
+        a0 = 0.0 if is_first else float(coarse(t0)) - pad0
+        a1 = audio_dur if is_last else float(coarse(t1)) + pad1
         ai0 = max(0, int(a0 * fps))
         ai1 = min(Fa.shape[1], int(a1 * fps))
         if ai1 - ai0 < (mi1 - mi0):
@@ -275,16 +295,18 @@ def _refine_path(y_audio, midi_data, sr, hop, onset_weight, transpose,
         ta = (ai0 + wp[:, 1]) / fps
         # keep the middle of the chunk only — the edges of a subsequence match
         # are the least reliable part of it
-        lo = t0 if t0 <= 0 else t0 + overlap_s / 2
-        hi = t1 if t1 >= midi_dur else t1 - overlap_s / 2
+        lo = t0 if is_first else t0 + overlap_s / 2
+        hi = t1 if is_last else t1 - overlap_s / 2
         sel = (tm >= lo) & (tm <= hi)
         if not sel.any():
             continue
-        # sanity: a chunk that lands far from where the coarse pass put it has
-        # almost certainly locked onto the wrong thing — keep the coarse answer
-        drift = float(np.median(ta[sel] - coarse(tm[sel])))
-        if abs(drift) > pad_s:
-            continue
+        if not (is_first or is_last):
+            # sanity: an interior chunk that lands far from where the coarse
+            # pass put it has almost certainly locked onto the wrong thing —
+            # keep the coarse answer. Doesn't apply at the edges (see above).
+            drift = float(np.median(ta[sel] - coarse(tm[sel])))
+            if abs(drift) > pad_s:
+                continue
         out_m.append(tm[sel])
         out_a.append(ta[sel])
         kept += 1
@@ -294,9 +316,15 @@ def _refine_path(y_audio, midi_data, sr, hop, onset_weight, transpose,
         return coarse_midi_t, coarse_audio_t
     tm = np.concatenate(out_m)
     ta = np.concatenate(out_a)
+    # a wide-open edge window can still occasionally run backwards relative to
+    # its neighbour (e.g. the last chunk's free-floating match lands slightly
+    # before the interior chunk it overlaps) — sort by MIDI time, then repair
+    # any local non-monotonicity in audio time before it reaches interp1d.
     order = np.argsort(tm, kind='stable')
+    tm, ta = tm[order], ta[order]
+    ta = np.maximum.accumulate(ta)
     print(f"  {kept}/{len(starts)} chunks refined")
-    return tm[order], ta[order]
+    return tm, ta
 
 
 def _linear_warp(y_audio, sr, dur, midi_data, midi_offset):
@@ -313,7 +341,101 @@ def _linear_warp(y_audio, sr, dur, midi_data, midi_offset):
     return lambda t: midi_offset + t * scale
 
 
-def _apply_warp(midi_data, warp_func, output_path):
+def _tail_silence_start(y_audio, sr, hop=512, silence_db=-40.0):
+    """Where the recording's real content actually stops — the start of the
+    sustained near-silence that holds all the way to the file's end (room
+    tone / noise floor), not just the literal last sample. A held final chord
+    is chroma-flat and gives DTW no gradient to place an exact attack inside
+    it, so the warped note can land well short of where the performance
+    genuinely ends; this lets that note's sustain reach the real ending
+    instead of being cut off while the recording is still audibly ringing."""
+    rms = librosa.feature.rms(y=y_audio, hop_length=hop)[0]
+    db = librosa.amplitude_to_db(rms, ref=np.max)
+    t = librosa.frames_to_time(np.arange(len(rms)), sr=sr, hop_length=hop)
+    below = db < silence_db
+    i = len(below) - 1
+    while i > 0 and below[i]:
+        i -= 1
+    return float(t[min(i + 1, len(below) - 1)])
+
+
+def _snap_entrances(midi_data, y_audio, sr, hop=128, search_s=1.6, cascade_s=2.0,
+                    min_shift_s=0.15, max_shift_s=2.0, min_prominence=15.0):
+    """Chroma+onset DTW reads the whole texture at once, so a voice ENTERING
+    on top of others already sounding is easy to misplace: its pitch barely
+    moves the aggregate chroma, and the broadband onset trace is dominated by
+    whatever else is already going. This looks at just the entering note's
+    own pitch instead — a CQT band a semitone wide around it — and searches
+    search_s either side of the warp's placement for its strongest peak.
+
+    Deliberately narrow in scope, after testing it wide and finding it isn't
+    trustworthy there: applied to every rest-then-entrance in a piece (not
+    just the very opening), the majority of "corrections" were the detector
+    latching onto some LATER recurrence of the same pitch elsewhere in the
+    phrase, not the true onset — high prominence alone doesn't distinguish
+    those from real fixes. Two constraints that held up when checked against
+    a hand-verified case are kept, everything looser is not:
+      - only the piece's true opening entrance for each instrument (its very
+        first note) — a phrase-internal rest is exactly the ambiguous case
+        that produced the false positives above
+      - only accepts a correction that moves the note EARLIER. A brand new
+        voice entering over an existing texture is exactly where chroma DTW's
+        cost-minimization is biased toward lateness (it needs accumulated new
+        evidence before committing to a change), so a genuine miss here skews
+        late; a proposed shift the other way is much more likely to be the
+        detector finding an unrelated later occurrence of the same pitch
+        than a real correction.
+    Even inside that scope, only a decisively dominant peak (min_prominence)
+    is trusted — everything else is left exactly where the warp put it."""
+    fmin = librosa.note_to_hz('C2')
+    n_bins = 84
+    cqt = np.abs(librosa.cqt(y=y_audio, sr=sr, hop_length=hop, fmin=fmin,
+                             n_bins=n_bins, bins_per_octave=12))
+    t_cqt = librosa.frames_to_time(np.arange(cqt.shape[1]), sr=sr, hop_length=hop)
+    base_midi = float(librosa.hz_to_midi(fmin))
+
+    def band_onset(pitch):
+        b = int(round(pitch - base_midi))
+        if b < 0 or b >= cqt.shape[0]:
+            return None
+        row = cqt[max(0, b - 1):min(cqt.shape[0], b + 2)].sum(axis=0)
+        return np.clip(np.diff(row, prepend=row[0]), 0, None)
+
+    snapped = 0
+    for inst in midi_data.instruments:
+        if inst.is_drum or not inst.notes:
+            continue
+        n = min(inst.notes, key=lambda x: x.start)   # this instrument's true opening note only
+        env = band_onset(n.pitch)
+        if env is None:
+            continue
+        mask = (t_cqt >= max(0.0, n.start - search_s)) & (t_cqt <= n.start + search_s)
+        seg, seg_t = env[mask], t_cqt[mask]
+        if seg.size == 0 or seg.max() <= 0:
+            continue
+        peak_i = int(np.argmax(seg))
+        typical = np.median(seg[seg > 0]) if (seg > 0).any() else 0.0
+        prominence = seg[peak_i] / (typical + 1e-9)
+        shift = float(seg_t[peak_i]) - n.start
+        if shift >= 0 or prominence < min_prominence or not (min_shift_s <= -shift <= max_shift_s):
+            continue
+        snapped += 1
+        for nj in sorted(inst.notes, key=lambda x: x.start):
+            age = nj.start - n.start
+            if age < 0:
+                continue
+            if age > cascade_s:
+                break
+            d = shift * (1.0 - age / cascade_s)
+            nj.start = max(0.0, nj.start + d)
+            nj.end = max(nj.end + d, nj.start + 0.02)
+    if snapped:
+        print(f"  snapped {snapped} instrument entrance(s) to their own pitch's clearest onset")
+    return snapped
+
+
+def _apply_warp(midi_data, warp_func, output_path, extend_final_to=None,
+                y_audio=None, sr=None, snap_entrances=True):
     print("Warping MIDI note data...")
     for instrument in midi_data.instruments:
         for note in instrument.notes:
@@ -321,6 +443,25 @@ def _apply_warp(midi_data, warp_func, output_path):
             e = float(warp_func(note.end))
             note.start = max(0.0, s)
             note.end = max(e, s + 0.02)   # never let a note collapse to nothing
+
+    if snap_entrances and y_audio is not None:
+        _snap_entrances(midi_data, y_audio, sr)
+
+    if extend_final_to is not None:
+        # A sustained final chord/fermata gives chroma DTW no gradient, so its
+        # ending can land well short of where the recording actually stops.
+        # Stretch only the note(s) that are the true last-ending ones — never
+        # pull an earlier-ending note out to match, that would be a different
+        # error (a wrong instrument suddenly outlasting the others).
+        all_notes = [n for inst in midi_data.instruments for n in inst.notes]
+        if all_notes:
+            final_end = max(n.end for n in all_notes)
+            if extend_final_to > final_end:
+                stretched = [n for n in all_notes if n.end >= final_end - 0.01]
+                print(f"  extending {len(stretched)} final note(s) from {final_end:.2f}s "
+                      f"to {extend_final_to:.2f}s (recording's real tail)")
+                for n in stretched:
+                    n.end = extend_final_to
 
     print(f"Saving aligned MIDI to: {output_path}")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
