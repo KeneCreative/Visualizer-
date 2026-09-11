@@ -361,20 +361,36 @@ def _tail_silence_start(y_audio, sr, hop=512, silence_db=-40.0):
 
 def _snap_entrances(midi_data, y_audio, sr, hop=128, search_s=1.6, cascade_s=2.0,
                     min_shift_s=0.15, max_shift_s=2.0, min_prominence=15.0):
-    """Chroma+onset DTW reads the whole texture at once, so a voice ENTERING
-    on top of others already sounding is easy to misplace: its pitch barely
-    moves the aggregate chroma, and the broadband onset trace is dominated by
-    whatever else is already going. This looks at just the entering note's
-    own pitch instead — a CQT band a semitone wide around it — and searches
-    search_s either side of the warp's placement for its strongest peak.
+    """OFF BY DEFAULT — opt in with snap_entrances=True and verify the result
+    by ear. Chroma+onset DTW reads the whole texture at once, so a voice
+    ENTERING on top of others already sounding is easy to misplace: its pitch
+    barely moves the aggregate chroma, and the broadband onset trace is
+    dominated by whatever else is already going. This looks at just the
+    entering note's own pitch instead — a CQT band a semitone wide around it
+    — and searches search_s either side of the warp's placement for its
+    strongest peak.
 
-    Deliberately narrow in scope, after testing it wide and finding it isn't
-    trustworthy there: applied to every rest-then-entrance in a piece (not
-    just the very opening), the majority of "corrections" were the detector
-    latching onto some LATER recurrence of the same pitch elsewhere in the
-    phrase, not the true onset — high prominence alone doesn't distinguish
-    those from real fixes. Two constraints that held up when checked against
-    a hand-verified case are kept, everything looser is not:
+    Turned off after finding a failure mode a first round of testing missed:
+    on Beethoven Op.135 mvt 1, the note right before Violino I's entrance is
+    a low cello C2 — whose 6th harmonic (392.5 Hz) lands within 2 cents of
+    the violin's own G4 (392.0 Hz). The "clean, dominant, high-prominence
+    peak" this function found in the violin's pitch band was actually the
+    cello's sustained note ringing out, not a violin attack at all. No
+    prominence threshold fixes this — it's the method's premise (a narrow
+    pitch band isolates one instrument) failing on a harmonic coincidence
+    with whatever else is sounding underneath, which is common in tonal
+    music (any note a 12th, 2 octaves, etc. below shares this problem) and
+    not detectable from the peak's shape alone. Treat any result from this
+    function as a candidate to verify by ear, not a trustworthy correction.
+
+    Deliberately narrow in scope even before that, after testing it wide and
+    finding it isn't trustworthy there either: applied to every
+    rest-then-entrance in a piece (not just the very opening), the majority
+    of "corrections" were the detector latching onto some LATER recurrence
+    of the same pitch elsewhere in the phrase, not the true onset — high
+    prominence alone doesn't distinguish those from real fixes either. Two
+    constraints that held up when checked against a hand-verified case are
+    kept, everything looser is not:
       - only the piece's true opening entrance for each instrument (its very
         first note) — a phrase-internal rest is exactly the ambiguous case
         that produced the false positives above
@@ -435,7 +451,7 @@ def _snap_entrances(midi_data, y_audio, sr, hop=128, search_s=1.6, cascade_s=2.0
 
 
 def _apply_warp(midi_data, warp_func, output_path, extend_final_to=None,
-                y_audio=None, sr=None, snap_entrances=True):
+                y_audio=None, sr=None, snap_entrances=False):
     print("Warping MIDI note data...")
     for instrument in midi_data.instruments:
         for note in instrument.notes:
