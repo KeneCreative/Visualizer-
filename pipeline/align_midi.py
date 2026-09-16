@@ -322,6 +322,21 @@ def _refine_path(y_audio, midi_data, sr, hop, onset_weight, transpose,
     # any local non-monotonicity in audio time before it reaches interp1d.
     order = np.argsort(tm, kind='stable')
     tm, ta = tm[order], ta[order]
+    # A skipped chunk leaves NO samples over its stretch of MIDI time. That's a
+    # hole, not a fallback: interp1d would draw one straight line clean across
+    # it and throw away the coarse path's shape there — which is exactly what
+    # the skip was trying to preserve. Put the coarse path back in the gaps.
+    grid = np.arange(0.0, midi_dur + 1e-9, 0.10)
+    pos = np.searchsorted(tm, grid)
+    lo = np.clip(pos - 1, 0, len(tm) - 1)
+    hi = np.clip(pos, 0, len(tm) - 1)
+    gap = np.minimum(np.abs(grid - tm[lo]), np.abs(grid - tm[hi])) > 0.25
+    if gap.any():
+        print(f"  filling {gap.sum() * 0.10:.0f}s of unrefined MIDI from the coarse path")
+        tm = np.concatenate([tm, grid[gap]])
+        ta = np.concatenate([ta, coarse(grid[gap])])
+        order = np.argsort(tm, kind='stable')
+        tm, ta = tm[order], ta[order]
     ta = np.maximum.accumulate(ta)
     print(f"  {kept}/{len(starts)} chunks refined")
     return tm, ta

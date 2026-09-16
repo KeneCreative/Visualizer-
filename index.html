@@ -13,6 +13,16 @@
      the black body; resize() sets the explicit width/height in px. The
      screen-shake code owns `transform`, so centring is done with margins. */
   canvas#stage { display:block; position:absolute; inset:0; margin:auto; }
+  /* Sits behind the (then transparent) canvas purely so you can SEE that the
+     background is transparent while setting it up. It is a real page element,
+     so OBS captures it too — it's a preview aid, not part of the render. */
+  #bg-checker { position:absolute; inset:0; margin:auto; pointer-events:none; display:none;
+    background-color:#3a3a42;
+    background-image:linear-gradient(45deg,#23232a 25%,transparent 25%),linear-gradient(-45deg,#23232a 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#23232a 75%),linear-gradient(-45deg,transparent 75%,#23232a 75%);
+    background-size:28px 28px; background-position:0 0,0 14px,14px -14px,-14px 0; }
+  /* Transparent mode: the page itself must carry no paint or OBS gets that
+     instead of alpha. */
+  html.bg-transparent, html.bg-transparent body { background:transparent !important; }
   #countdown-overlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
     pointer-events:none; font-size:min(22vw,22vh); font-weight:800; color:#00ffaa;
     font-family:'Inter',system-ui,sans-serif; text-shadow:0 0 40px rgba(0,255,170,.8), 0 0 100px rgba(0,255,170,.5); }
@@ -111,6 +121,7 @@
 </head>
 <body>
 
+<div id="bg-checker"></div>
 <canvas id="stage"></canvas>
 <div id="center-guides">
   <div class="cg-v cg-third" style="left:33.333%"></div>
@@ -139,6 +150,7 @@
     <div id="main-body">
       <p class="text-xs text-gray-400 mb-3">Load a MIDI file to map tracks onto geometry.</p>
       <input type="file" id="midi-upload" accept=".mid,.midi">
+      <select id="midi-aligned-select" class="text-[10px] mt-1" style="width:100%;"><option value="">midi/aligned/ — loading…</option></select>
       <div id="midi-file-status" class="text-[10px] text-gray-500 mt-1">No MIDI loaded.</div>
       <div id="load-error" class="text-xs text-rose-400 mt-2 collapsed"></div>
 
@@ -194,6 +206,7 @@
           <input type="file" id="json-upload" accept=".json,application/json" class="text-[10px] text-gray-400 flex-1">
           <button type="button" id="json-clear" class="btn-sm" title="Unload the RMS energy JSON — the stage stops reacting to the mix">Clear</button>
         </div>
+        <select id="energy-select" class="text-[10px] mt-1" style="width:100%;"><option value="">energy/ — loading…</option></select>
         <div id="energy-json-status" class="text-[10px] text-gray-500 mt-1">No file loaded — [{"t":0.0,"e":0.0}, ...]</div>
         <div class="mt-2"><span class="lbl">APPLIES TO</span>
           <label class="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
@@ -300,6 +313,94 @@
           <div class="text-[10px] text-gray-500 mt-2 leading-snug">
             Frame rate low? Drop <span class="text-amber-400">Render Scale</span> to 0.75,
             then <span class="text-amber-400">Max Wisps</span>, then <span class="text-cyan-400">Glow</span> to 0.
+          </div>
+        </div>
+      </div>
+
+      <div class="sect">
+        <div class="sect-hd" data-toggle="bg-body">
+          <span class="text-sm font-semibold text-white">Background</span>
+          <span class="text-xs text-cyan-400 font-mono toggle-icon">[+]</span>
+        </div>
+        <div id="bg-body" class="collapsed">
+          <div class="grid grid-cols-2 gap-3 mt-2">
+            <div class="col-span-2"><span class="lbl">BACKGROUND</span>
+              <select id="bg-mode">
+                <option value="color">Solid colour</option>
+                <option value="gradient">Gradient</option>
+                <option value="image">Image</option>
+                <option value="chroma">Chroma key (green screen)</option>
+                <option value="transparent">Transparent (for OBS)</option>
+              </select></div>
+
+            <div class="col-span-2" data-bgmode="color image"><span class="lbl">COLOUR</span>
+              <input type="color" id="bg-color" value="#08080a"
+                style="width:100%;height:26px;padding:1px 2px;border-radius:4px;border:1px solid #555;background:transparent;cursor:pointer;"
+                title="On Image mode this is what shows behind a 'Contain' fit."></div>
+
+            <div data-bgmode="gradient"><span class="lbl text-violet-300">FROM</span>
+              <input type="color" id="bg-grad1" value="#05060d"
+                style="width:100%;height:26px;padding:1px 2px;border-radius:4px;border:1px solid #555;background:transparent;cursor:pointer;"></div>
+            <div data-bgmode="gradient"><span class="lbl text-violet-300">TO</span>
+              <input type="color" id="bg-grad2" value="#241a3a"
+                style="width:100%;height:26px;padding:1px 2px;border-radius:4px;border:1px solid #555;background:transparent;cursor:pointer;"></div>
+            <div data-bgmode="gradient"><span class="lbl text-violet-300">SHAPE</span>
+              <select id="bg-gradshape">
+                <option value="linear">Linear</option><option value="radial">Radial</option>
+              </select></div>
+            <div data-bgmode="gradient"><span class="lbl text-violet-300">ANGLE <span class="text-gray-300 font-mono" id="ro-bgangle">180</span></span>
+              <input type="range" id="bg-gradangle" data-readout="ro-bgangle" min="0" max="360" step="5" value="180"></div>
+
+            <div class="col-span-2" data-bgmode="image"><span class="lbl text-sky-300">IMAGE FILE</span>
+              <input type="file" id="bg-image-file" accept="image/*">
+              <button class="btn-sm mt-1" id="bg-image-clear">CLEAR IMAGE</button>
+              <div class="text-[10px] text-gray-500 mt-1" id="bg-image-status">No image loaded.</div></div>
+            <div data-bgmode="image"><span class="lbl text-sky-300">FIT</span>
+              <select id="bg-fit">
+                <option value="cover">Cover</option><option value="contain">Contain</option>
+                <option value="stretch">Stretch</option><option value="tile">Tile</option>
+              </select></div>
+            <div data-bgmode="image"><span class="lbl text-sky-300">DARKEN <span class="text-gray-300 font-mono" id="ro-bgdim">0</span></span>
+              <input type="range" id="bg-dim" data-readout="ro-bgdim" min="0" max="1" step="0.05" value="0"
+                title="Push the photo back so the glowing paths stay readable on top of it."></div>
+            <div class="col-span-2" data-bgmode="image"><span class="lbl text-sky-300">BLUR <span class="text-gray-300 font-mono" id="ro-bgblur">0</span></span>
+              <input type="range" id="bg-blur" data-readout="ro-bgblur" min="0" max="40" step="1" value="0"></div>
+
+            <div class="col-span-2" data-bgmode="chroma"><span class="lbl text-emerald-300">KEY COLOUR</span>
+              <input type="color" id="bg-chroma" value="#00b140"
+                style="width:100%;height:26px;padding:1px 2px;border-radius:4px;border:1px solid #555;background:transparent;cursor:pointer;">
+              <div class="flex gap-1 mt-1">
+                <button class="btn-sm" data-chroma="#00b140">GREEN</button>
+                <button class="btn-sm" data-chroma="#ff00ff">MAGENTA</button>
+                <button class="btn-sm" data-chroma="#0047bb">BLUE</button>
+              </div></div>
+
+            <div class="col-span-2" data-bgmode="transparent">
+              <label class="flex items-center gap-1 cursor-pointer">
+                <input type="checkbox" id="bg-checkerbox">
+                <span class="text-[10px] text-gray-400">Show checkerboard &mdash; preview only, OBS captures it too</span>
+              </label></div>
+          </div>
+
+          <div class="text-[10px] text-gray-500 mt-2 leading-snug" data-bgmode="transparent">
+            Add this page to OBS as a <span class="text-cyan-400">Browser Source</span> &mdash; that one
+            keeps the alpha channel, so the stage floats over whatever is underneath it. Window
+            Capture and Display Capture both flatten it onto black instead. Nothing else to set up;
+            leave the checkerboard off when you record.
+          </div>
+          <div class="text-[10px] text-gray-500 mt-2 leading-snug" data-bgmode="chroma">
+            For capture methods that can't carry alpha. Add a
+            <span class="text-emerald-300">Color Key</span> filter on the source in OBS and pick this
+            same colour. Transparent mode is cleaner if you can use a Browser Source &mdash; keying
+            leaves a coloured fringe around the glow.
+          </div>
+          <div class="text-[10px] text-gray-500 mt-2 leading-snug" data-bgmode="image">
+            The picked image is remembered across refreshes, but is deliberately left out of exported
+            presets &mdash; embedding it would add megabytes to every preset file. Re-pick it after
+            loading a preset on another machine.
+          </div>
+          <div class="text-[10px] text-gray-500 mt-2 leading-snug" data-bgmode="gradient image chroma">
+            The background is drawn inside the stage itself, so the built-in recorder captures it too.
           </div>
         </div>
       </div>
@@ -589,6 +690,7 @@
             <button class="btn-sm" id="p-reset">Reset</button>
             <button class="btn-sm btn-rec" id="p-record">● Record</button>
           </div>
+          <select id="preset-select" class="text-[10px] mt-2" style="width:100%;"><option value="">presets/ — loading…</option></select>
           <input type="file" id="p-file" accept=".json" class="collapsed">
           <div id="rec-status" class="text-[10px] text-gray-500 mt-2 font-mono"></div>
         </div>
@@ -903,7 +1005,9 @@ const SHAPES = [
     // computed analytically per-segment (not via param()'s finite-
     // difference tangent), which matters here specifically — averaging
     // the tangent across a sharp corner would smooth the very thing
-    // that's supposed to look sharp.
+    // that's supposed to look sharp. SMOOTH CORNERS (a toggle, off by
+    // default) switches to a Catmull-Rom spline through the same control
+    // points instead — y is already linear in uu so only x needs curving.
     lanes: [{ id: 'main', label: 'Main' }, { id: 'mirror', label: 'Mirrored' }],
     laneColors: ['#fff34d', '#7dfcff'],
     usesMirrorMode: true,
@@ -911,15 +1015,25 @@ const SHAPES = [
     fill: 0.16,   // horizontal zigzag amplitude, as a fraction of stage width
     points: [0.15, -0.55, 0.35, -0.85, 0.55, -0.35, 0.75, -0.1, 0.4],
     place(t, li, g) {
-      const pts = this.points, amp = g.W * this.fill;
+      const pts = this.points, amp = g.W * this.fill, n = pts.length - 1;
+      const bc = cfg.shapes && cfg.shapes.bolt;
+      const smooth = !!(bc && bc.smoothCorners);
+      const clamp = i => pts[Math.max(0, Math.min(pts.length - 1, i))];
       const baseFn = (uu) => {
-        const n = pts.length - 1;
         const seg = Math.min(n - 0.0001, Math.max(0, uu * n));
         const i = Math.floor(seg), frac = seg - i;
-        const x0 = pts[i], x1 = pts[i + 1];
-        const x = g.CX + (x0 + (x1 - x0) * frac) * amp;
-        const y = uu * g.H;
-        const dx = (x1 - x0) * amp, dy = g.H / n;
+        const y = uu * g.H, dy = g.H / n;
+        if (!smooth) {
+          const x0 = pts[i], x1 = pts[i + 1];
+          const x = g.CX + (x0 + (x1 - x0) * frac) * amp;
+          const dx = (x1 - x0) * amp;
+          return { x, y, angle: Math.atan2(dy, dx) };
+        }
+        const p0 = clamp(i - 1), p1 = clamp(i), p2 = clamp(i + 1), p3 = clamp(i + 2);
+        const f2 = frac * frac, f3 = f2 * frac;
+        const xu = 0.5 * ((2 * p1) + (-p0 + p2) * frac + (2 * p0 - 5 * p1 + 4 * p2 - p3) * f2 + (-p0 + 3 * p1 - 3 * p2 + p3) * f3);
+        const dxu = 0.5 * ((-p0 + p2) + 2 * (2 * p0 - 5 * p1 + 4 * p2 - p3) * frac + 3 * (-p0 + 3 * p1 - 3 * p2 + p3) * f2);
+        const x = g.CX + xu * amp, dx = dxu * amp;
         return { x, y, angle: Math.atan2(dy, dx) };
       };
       return mirroredLane('bolt', t, li, g, baseFn);
@@ -1218,6 +1332,11 @@ function defaultConfig() {
               subwaveOffX: 0, subwaveOffY: 0, subwaveDistX: 1, subwaveDistY: 1, subwaveSize: 1, subwaveOpacity: 1,
               legendOrder: [], legendLabels: {}, legendHidden: {},
               mode: 'free', rainbow: 'off', lockLow: 36, lockHigh: 96, guides: false,
+              // Background. The picked image itself lives in IndexedDB, not here —
+              // a base64 image would bloat every exported preset by megabytes.
+              bgMode: 'color', bgColor: '#08080a',
+              bgGrad1: '#05060d', bgGrad2: '#241a3a', bgGradAngle: 180, bgGradShape: 'linear',
+              bgChroma: '#00b140', bgFit: 'cover', bgDim: 0, bgBlur: 0, bgChecker: false,
               shapes: {}, mutes: {} };
   SHAPES.forEach(s => {
     c.shapes[s.id] = {
@@ -1229,7 +1348,7 @@ function defaultConfig() {
       twistSpeed: (s.twistSpeed != null ? s.twistSpeed : 0),
       showHeads: true,
       wispLife: 0.9, tailStyle: 'taper',
-      revAmt: 0, revBass: true, bloomAmt: 0, fireworkAmt: 0,
+      revAmt: 0, revBass: true, bloomAmt: 0, bloomSustain: false, fireworkAmt: 0,
       noteShape: 'line', vibAmt: 0, vibRate: 5,
       petalAmt: 0, petalFall: 55,
       lanes: s.lanes.map((ln, i) => ({ on: true, track: 'shared', dir: 'forward', noteShape: 'shared', revAmt: 'shared',
@@ -1245,6 +1364,7 @@ function defaultConfig() {
   }
   if (c.shapes['parc']) c.shapes['parc'].straighten = 0;
   if (c.shapes['cloud']) c.shapes['cloud'].gather = 0;
+  if (c.shapes['bolt']) c.shapes['bolt'].smoothCorners = false;
   if (c.shapes['halfsun']) {
     c.shapes['halfsun'].cloudMask = false;
     c.shapes['halfsun'].mirrorRays = true;
@@ -1269,7 +1389,7 @@ let cfg = defaultConfig();
    ============================================================ */
 const canvas = document.getElementById('stage');
 const gl = canvas.getContext('webgl2', {
-  alpha: false, antialias: false, depth: false, stencil: false,
+  alpha: true, antialias: false, depth: false, stencil: false,
   premultipliedAlpha: true,
   preserveDrawingBuffer: true    // needed for reliable captureStream()
 });
@@ -1517,6 +1637,99 @@ function ensureBlueprintCache() {
   bpDirty = false;
 }
 
+/* ---------- background (gradient / image / chroma key) ----------
+   Painted with Canvas2D and uploaded as a texture, the same trick the
+   blueprint uses. It has to live INSIDE the GL canvas rather than as a CSS
+   layer behind it, because the built-in recorder grabs canvas.captureStream()
+   — a CSS background would be missing from every recording. Transparent mode
+   simply skips this pass and clears to alpha 0. */
+const bgTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, bgTex);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+const bgCanvas = document.createElement('canvas');
+const bgCtx = bgCanvas.getContext('2d');
+let bgDirty = true;
+let bgImage = null, bgImageName = '';
+
+function drawBgInto(c) {
+  const mode = cfg.bgMode || 'color';
+  c.clearRect(0, 0, W, H);
+  if (mode === 'gradient') {
+    let g;
+    if (cfg.bgGradShape === 'radial') {
+      g = c.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.72);
+    } else {
+      // CSS convention: 0deg points up, angle grows clockwise
+      const a = ((cfg.bgGradAngle || 0) - 90) * Math.PI / 180;
+      const r = (Math.abs(W * Math.cos(a)) + Math.abs(H * Math.sin(a))) / 2;
+      g = c.createLinearGradient(W / 2 - Math.cos(a) * r, H / 2 - Math.sin(a) * r,
+                                 W / 2 + Math.cos(a) * r, H / 2 + Math.sin(a) * r);
+    }
+    g.addColorStop(0, cfg.bgGrad1 || '#000000');
+    g.addColorStop(1, cfg.bgGrad2 || '#000000');
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+    return;
+  }
+  if (mode === 'chroma') {
+    c.fillStyle = cfg.bgChroma || '#00b140';
+    c.fillRect(0, 0, W, H);
+    return;
+  }
+  if (mode === 'image') {
+    c.fillStyle = cfg.bgColor || '#08080a';   // shows through letterboxing on "contain"
+    c.fillRect(0, 0, W, H);
+    if (bgImage && bgImage.width) {
+      const blur = Math.max(0, Math.min(60, cfg.bgBlur || 0));
+      const pad = blur * 2;                   // overdraw so blur can't feather in from the edges
+      const fit = cfg.bgFit || 'cover';
+      c.save();
+      if (blur) c.filter = `blur(${blur}px)`;
+      if (fit === 'tile') {
+        c.fillStyle = c.createPattern(bgImage, 'repeat');
+        c.fillRect(-pad, -pad, W + pad * 2, H + pad * 2);
+      } else if (fit === 'stretch') {
+        c.drawImage(bgImage, -pad, -pad, W + pad * 2, H + pad * 2);
+      } else {
+        const s = fit === 'contain' ? Math.min(W / bgImage.width, H / bgImage.height)
+                                    : Math.max(W / bgImage.width, H / bgImage.height);
+        const dw = bgImage.width * s, dh = bgImage.height * s;
+        c.drawImage(bgImage, (W - dw) / 2, (H - dh) / 2, dw, dh);
+      }
+      c.restore();
+    }
+    const dim = Math.max(0, Math.min(1, cfg.bgDim || 0));
+    if (dim > 0) { c.fillStyle = `rgba(0,0,0,${dim})`; c.fillRect(0, 0, W, H); }
+  }
+}
+
+function ensureBgCache() {
+  const pw = Math.round(W * DPR), ph = Math.round(H * DPR);
+  if (!bgDirty && bgCanvas.width === pw && bgCanvas.height === ph) return;
+  bgCanvas.width = pw; bgCanvas.height = ph;
+  bgCtx.setTransform(DPR, 0, 0, DPR, 0, 0);   // resizing the canvas resets this
+  drawBgInto(bgCtx);
+  gl.bindTexture(gl.TEXTURE_2D, bgTex);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bgCanvas);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  bgDirty = false;
+}
+
+/* Repaint, and show only the settings that belong to the chosen mode. */
+function applyBackground() {
+  bgDirty = true;
+  const mode = cfg.bgMode || 'color';
+  document.documentElement.classList.toggle('bg-transparent', mode === 'transparent');
+  const chk = document.getElementById('bg-checker');
+  if (chk) chk.style.display = (mode === 'transparent' && cfg.bgChecker) ? 'block' : 'none';
+  document.querySelectorAll('[data-bgmode]').forEach(el => {
+    el.style.display = el.dataset.bgmode.split(' ').includes(mode) ? '' : 'none';
+  });
+}
+
 /* A second, lighter cache: just the currently-selected path's own outline
    in bold white, nothing else — no grid lines, no other paths. This is
    what "Preview path" shows when the full Blueprint is switched off, so
@@ -1677,6 +1890,9 @@ function resize() {
   canvas.style.height = H + 'px';
   const cg = document.getElementById('center-guides');
   if (cg) { cg.style.width = W + 'px'; cg.style.height = H + 'px'; }
+  const chk = document.getElementById('bg-checker');
+  if (chk) { chk.style.width = W + 'px'; chk.style.height = H + 'px'; }
+  bgDirty = true;
   gl.bindTexture(gl.TEXTURE_2D, trailRT.tex);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, pw, ph, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
   geo.W = W; geo.H = H; geo.CX = CX; geo.CY = CY;
@@ -2294,6 +2510,60 @@ document.getElementById('midi-upload').addEventListener('change', e => {
   reader.readAsArrayBuffer(file);
 });
 
+/* ------------------------------------------------------------
+   FOLDER BROWSING (midi/aligned/, energy/, presets/)
+   Only works when served over http (e.g. `python -m http.server`),
+   relying on the server's directory-listing page for the file names —
+   fetch() can't list a folder over file://. Each dropdown quietly
+   falls back to "not available" if the listing can't be fetched or
+   parsed, leaving the manual file pickers above as the way in. */
+async function listFolder(url, exts) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const html = await res.text();
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const names = [...doc.querySelectorAll('a[href]')]
+    .map(a => decodeURIComponent(a.getAttribute('href')))
+    .filter(h => !h.includes('/') && !h.startsWith('.') && !h.startsWith('?'))
+    .filter(h => exts.some(ext => h.toLowerCase().endsWith(ext)));
+  return [...new Set(names)].sort((a, b) => a.localeCompare(b));
+}
+
+async function populateFolderSelect(selectId, folder, exts, onPick) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  try {
+    const names = await listFolder(folder, exts);
+    if (!names.length) { sel.innerHTML = `<option value="">${folder} — no files found</option>`; return; }
+    sel.innerHTML = `<option value="">${folder} — choose a file…</option>` +
+      names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+    sel.addEventListener('change', async () => {
+      const name = sel.value;
+      if (!name) return;
+      try { await onPick(folder + name, name); }
+      catch (err) { showError('Could not load ' + name + ': ' + err.message); }
+      sel.value = '';
+    });
+  } catch (err) {
+    sel.innerHTML = `<option value="">${folder} — needs the app served over http (see README)</option>`;
+  }
+}
+
+populateFolderSelect('midi-aligned-select', 'midi/aligned/', ['.mid', '.midi'], async (path, name) => {
+  const buf = await fetch(path).then(r => r.arrayBuffer());
+  applyMidiBuffer(buf, name);
+});
+populateFolderSelect('energy-select', 'energy/', ['.json'], async (path, name) => {
+  const parsed = await fetch(path).then(r => r.json());
+  applyEnergyData(parsed);
+});
+populateFolderSelect('preset-select', 'presets/', ['.json'], async (path, name) => {
+  const parsed = await fetch(path).then(r => r.json());
+  cfg = repairConfig(Object.assign(defaultConfig(), parsed));
+  writeConfigToDOM(); saveLocal();
+  if (trackMeta.length) populateTrackSelects();
+});
+
 /* ============================================================
    PANEL GENERATION  (derived entirely from SHAPES)
    ============================================================ */
@@ -2451,6 +2721,13 @@ function buildShapeSections() {
         <div><span class="lbl text-amber-300">RAY SPREAD <span class="text-gray-300 font-mono" id="ro-raySpan-${s.id}">0.6</span></span>
           <input type="range" data-cfg="shape.${s.id}.raySpan" data-readout="ro-raySpan-${s.id}" min="0.05" max="1" step="0.05" value="0.6"
             title="How wide across the arc the ray fan reaches — 1 spans the whole arc"></div>` : ''}
+        ${s.id === 'bolt' ? `
+        <div class="col-span-2"><span class="lbl text-yellow-300">SMOOTH CORNERS</span>
+          <label class="flex items-center gap-1 mt-1 cursor-pointer"
+            title="Rounds the zigzag's sharp joints into a continuous curve instead of straight segments meeting at points.">
+            <input type="checkbox" data-cfg="shape.${s.id}.smoothCorners">
+            <span class="text-[10px] text-gray-400">Curve the joints instead of sharp corners</span>
+          </label></div>` : ''}
         <div><span class="lbl">INK COLOR (Lane 1)</span>
           <input type="color" class="swatch-hex" data-cfg="lane.${s.id}.0.ink" value="${s.ink}"
             style="width:100%;height:26px;padding:1px 2px;border-radius:4px;border:1px solid #555;background:transparent;cursor:pointer;"></div>
@@ -2510,6 +2787,12 @@ function buildShapeSections() {
         <div class="col-span-2"><span class="lbl text-sky-400">REVERB BLOOM</span>
           <input type="range" data-cfg="shape.${s.id}.bloomAmt" data-snap-mid="0" min="0" max="1" step="0.01" value="0"
             title="Expanding ring that radiates outward and fades — triggers on note ATTACK"></div>
+        <div class="col-span-2"><span class="lbl text-sky-400">SUSTAIN BLOOM</span>
+          <label class="flex items-center gap-1 mt-1 cursor-pointer"
+            title="A held note's ring keeps expanding for as long as the note sounds, then fades out on release — one continuous swell, not a repeat. Off = one fixed-size swell on the attack no matter how long the note is held.">
+            <input type="checkbox" data-cfg="shape.${s.id}.bloomSustain">
+            <span class="text-[10px] text-gray-400">Ring keeps expanding while the note is held</span>
+          </label></div>
         <div class="col-span-2"><span class="lbl text-amber-400">FIREWORK BLOOM</span>
           <input type="range" data-cfg="shape.${s.id}.fireworkAmt" data-snap-mid="0" min="0" max="1" step="0.01" value="0"
             title="Sparks burst outward radially the instant a note starts — also on note ATTACK, alongside Reverb Bloom"></div>
@@ -3019,7 +3302,7 @@ function applyControl(node) {
     }
     if (key === 'offX' || key === 'offY' || key === 'distX' || key === 'distY' || key === 'mirrorMode' || key === 'twistSpeed' ||
         key === 'helixMode' || key === 'windDirA' || key === 'windDirB' || key === 'straighten' ||
-        key === 'gather' || key === 'mirror') invalidateBlueprint();
+        key === 'gather' || key === 'mirror' || key === 'smoothCorners') invalidateBlueprint();
     if (key === 'track') { resetScanners(); firstNote = null; if (typeof computeFirstNote === 'function') computeFirstNote(); refreshTabTrackHighlights(); }
   } else if (parts_[0] === 'lane') {
     const [, sid, li, key] = parts_;
@@ -3268,7 +3551,10 @@ function writeConfigToDOM() {
    ['subwave-on', 'subwaveOn'], ['subwave-track', 'subwaveTrack'], ['subwave-color', 'subwaveColor'],
    ['subwave-base', 'subwaveBase'], ['subwave-spread', 'subwaveSpread'],
    ['subwave-offx', 'subwaveOffX'], ['subwave-offy', 'subwaveOffY'], ['subwave-distx', 'subwaveDistX'],
-   ['subwave-disty', 'subwaveDistY'], ['subwave-size', 'subwaveSize'], ['subwave-opacity', 'subwaveOpacity']]
+   ['subwave-disty', 'subwaveDistY'], ['subwave-size', 'subwaveSize'], ['subwave-opacity', 'subwaveOpacity'],
+   ['bg-mode', 'bgMode'], ['bg-color', 'bgColor'], ['bg-grad1', 'bgGrad1'], ['bg-grad2', 'bgGrad2'],
+   ['bg-gradshape', 'bgGradShape'], ['bg-gradangle', 'bgGradAngle'], ['bg-chroma', 'bgChroma'],
+   ['bg-fit', 'bgFit'], ['bg-dim', 'bgDim'], ['bg-blur', 'bgBlur'], ['bg-checkerbox', 'bgChecker']]
     .forEach(([id, key]) => {
       const el = document.getElementById(id);
       if (!el || cfg[key] === undefined) return;
@@ -3281,6 +3567,7 @@ function writeConfigToDOM() {
   }
   if (typeof resize === 'function') resize();   // a preset may carry a different FRAME / RENDER SCALE
   if (typeof applyGuides === 'function') applyGuides();
+  if (typeof applyBackground === 'function') applyBackground();
   resetScanners();
 }
 function saveLocal() { try { localStorage.setItem('mam-preset', JSON.stringify(cfg)); } catch (e) {} }
@@ -3808,7 +4095,7 @@ function tickPetals(dt) {
   petals.length = w;
 }
 
-function spawnBloom(p, sc, tt, glowColor) {
+function spawnBloom(p, sc, tt, glowColor, noteDur) {
   const amt = sc.bloomAmt || 0;
   if (amt <= 0.001 || blooms.length >= bloomCap) return;
   const lowNorm = sc.revBass ? (1 - tt) : 0.5;
@@ -3819,12 +4106,28 @@ function spawnBloom(p, sc, tt, glowColor) {
   const wLife = 0.60 + 0.70 * (0.40 + 0.60 * lowNorm);
   const wSize = 0.64 + 0.12 * lowNorm;   // centred on the old mid-pitch size, ~1.2x spread (was ~2.5x)
   const col = rgb(glowColor);
-  const life = (0.55 + 1.7 * amt) * wLife;
+  const base = (0.55 + 1.7 * amt) * wLife;
+  const baseR = (55 + 330 * amt) * wSize;
+  // SUSTAIN BLOOM: one ring that goes on growing for as long as the note is
+  // held, instead of finishing early. The radius is scaled by the same factor
+  // as the time so the ring keeps expanding at its normal speed — stretching
+  // the clock alone would leave it creeping outward for the whole note.
+  let life = base, rMax = baseR, sustain = false;
+  if (sc.bloomSustain) {
+    const held = Math.min(8, noteDur || 0);
+    if (held > base) {
+      life = held + base * 0.5;                      // + a short fade-out past the release
+      // Two ceilings, so a long note can't swallow the stage: the ring grows to
+      // at most 1.8x the one-shot size, and never past 40% of the short edge.
+      rMax = Math.min(baseR * Math.min(1.8, life / base), Math.min(geo.W, geo.H) * 0.40);
+      sustain = true;
+    }
+  }
   blooms.push({
     x: p.x, y: p.y,
     life, maxLife: life,
-    r0: 5, r1: (55 + 330 * amt) * wSize,
-    amt,
+    r0: 5, r1: rMax,
+    amt, sustain,
     cr: col[0], cg: col[1], cb: col[2]
   });
 }
@@ -3840,9 +4143,12 @@ function tickBlooms(dt) {
     const k    = 1 - b.life / b.maxLife;          // 0 -> 1 progress
     const ease = 1 - Math.pow(1 - k, 2.2);        // quick burst, slow settle
     const R    = b.r0 + (b.r1 - b.r0) * ease;
-    const fade = Math.pow(1 - k, 1.7);
-    // ring thins as it expands, so the energy visibly dissipates
-    const ring = Math.max(1.0, (9.0 * (1 - k) * (1 - k)) + 1.2);
+    // A sustained ring fades far more gently, so it stays readable the whole
+    // way out and only really drops off over the release.
+    const fade = Math.pow(1 - k, b.sustain ? 0.8 : 1.7);
+    // ring thins as it expands, so the energy visibly dissipates (a sustained
+    // one keeps a slightly heavier floor or it disappears at full radius)
+    const ring = Math.max(b.sustain ? 2.0 : 1.0, (9.0 * (1 - k) * (1 - k)) + 1.2);
     push(b.x, b.y, R, R, 0, R, ring * 1.7, ring,
          b.cr, b.cg, b.cb, fade * 0.60, 1, 0, 0);
     // faint filled wash trailing the ring
@@ -4413,14 +4719,14 @@ function renderShapes(t, frameDt) {
         if (!started.has(n)) {
           started.add(n);
           spawnFirework(p, sc, vs, laneCol);
-          spawnBloom(p, sc, tt, laneCol);
+          spawnBloom(p, sc, tt, laneCol, dur);   // dur drives how far SUSTAIN BLOOM expands
           if (sc.mirror !== 'none' && !(lane.id === 'rays' && sc.mirrorRays === false)) {
             if (sc.mirror === 'opp' && s.opp) {
               const o = s.opp(tt, li);
-              spawnBloom(placeAt(s, o.t, o.lane, geo, sc), sc, o.t, mirrorCol);
+              spawnBloom(placeAt(s, o.t, o.lane, geo, sc), sc, o.t, mirrorCol, dur);
             } else {
               const m = mirrorPlacement(sc.mirror, p, geo);
-              if (m) spawnBloom(m, sc, tt, mirrorCol);
+              if (m) spawnBloom(m, sc, tt, mirrorCol, dur);
             }
           }
           if (cfg.screenShake > 0.001) {
@@ -4610,10 +4916,18 @@ function animate(now) {
   // 3. screen: background, blueprint, trail, then wisps on top
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, pw, ph);
-  const bg = rgb(BP.bg);
   gl.disable(gl.BLEND);
-  gl.clearColor(bg[0], bg[1], bg[2], 1);
-  gl.clear(gl.COLOR_BUFFER_BIT);
+  const bgMode = cfg.bgMode || 'color';
+  if (bgMode === 'color') {
+    const bg = rgb(cfg.bgColor || BP.bg);
+    gl.clearColor(bg[0], bg[1], bg[2], 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+  } else {
+    // alpha 0 = what OBS turns into real transparency
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    if (bgMode !== 'transparent') { ensureBgCache(); blit(bgTex, true, false); }
+  }
 
   if (cfg.bp) { ensureBlueprintCache(); blit(bpTex, true, false); }
   else if (pathPreviewOn && activeShapeId && routingSect.style.display !== 'none' && uiLayer.style.display !== 'none') {
@@ -4684,6 +4998,7 @@ function bindEqControl(id, key) {
     cfg[key] = v;
     if (key === 'eqBands') eqState = makeBandState(Math.max(1, Math.round(v)));
     if (key === 'voiceBands') voiceState = makeBandState(Math.max(1, Math.round(v)));
+    if (key.startsWith('bg')) applyBackground();
     if (el.dataset.readout) { const ro = document.getElementById(el.dataset.readout); if (ro) ro.textContent = el.value; }
   };
   apply();
@@ -4707,10 +5022,71 @@ function bindEqControl(id, key) {
  ['subwave-on', 'subwaveOn'], ['subwave-track', 'subwaveTrack'], ['subwave-color', 'subwaveColor'],
  ['subwave-base', 'subwaveBase'], ['subwave-spread', 'subwaveSpread'],
  ['subwave-offx', 'subwaveOffX'], ['subwave-offy', 'subwaveOffY'], ['subwave-distx', 'subwaveDistX'],
- ['subwave-disty', 'subwaveDistY'], ['subwave-size', 'subwaveSize'], ['subwave-opacity', 'subwaveOpacity']]
+ ['subwave-disty', 'subwaveDistY'], ['subwave-size', 'subwaveSize'], ['subwave-opacity', 'subwaveOpacity'],
+ ['bg-mode', 'bgMode'], ['bg-color', 'bgColor'], ['bg-grad1', 'bgGrad1'], ['bg-grad2', 'bgGrad2'],
+ ['bg-gradshape', 'bgGradShape'], ['bg-gradangle', 'bgGradAngle'], ['bg-chroma', 'bgChroma'],
+ ['bg-fit', 'bgFit'], ['bg-dim', 'bgDim'], ['bg-blur', 'bgBlur'], ['bg-checkerbox', 'bgChecker']]
   .forEach(([id, key]) => bindEqControl(id, key));
 
+/* Background image: kept in IndexedDB rather than cfg so exported presets
+   stay small, and restored on refresh like the MIDI and energy JSON. */
+function setBgImage(url, name, restored) {
+  const st = document.getElementById('bg-image-status');
+  bgImageName = name || '';
+  if (!url) {
+    bgImage = null; bgDirty = true;
+    if (st) st.textContent = 'No image loaded.';
+    idb.del('bgimg');
+    return;
+  }
+  const img = new Image();
+  img.onload = () => { bgImage = img; bgDirty = true; };
+  img.onerror = () => {
+    bgImage = null; bgDirty = true;
+    if (st) st.textContent = 'Could not read that image.';
+  };
+  img.src = url;
+  if (st) st.textContent = (restored ? 'Restored: ' : '') + (bgImageName || 'image');
+  if (!restored) idb.set('bgimg', { url, name: bgImageName });
+}
+
+const bgFileEl = document.getElementById('bg-image-file');
+if (bgFileEl) bgFileEl.addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onerror = () => { const st = document.getElementById('bg-image-status');
+                           if (st) st.textContent = 'Could not read that file.'; };
+  reader.onload = ev => {
+    setBgImage(ev.target.result, file.name);
+    if (cfg.bgMode !== 'image') {           // picking a file clearly means "use it"
+      cfg.bgMode = 'image';
+      const sel = document.getElementById('bg-mode');
+      if (sel) sel.value = 'image';
+    }
+    applyBackground(); saveLocal();
+  };
+  reader.readAsDataURL(file);
+});
+
+const bgClearEl = document.getElementById('bg-image-clear');
+if (bgClearEl) bgClearEl.addEventListener('click', () => {
+  setBgImage(null);
+  if (bgFileEl) bgFileEl.value = '';
+  applyBackground();
+});
+
+document.querySelectorAll('[data-chroma]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    cfg.bgChroma = btn.dataset.chroma;
+    const el = document.getElementById('bg-chroma');
+    if (el) el.value = cfg.bgChroma;
+    applyBackground(); saveLocal();
+  });
+});
+
 loadLocal();
+applyBackground();
 
 /* Bring back the last MIDI and energy JSON from IndexedDB so a refresh
    doesn't leave a blank stage. (The backing-track WAV is too big to stash
@@ -4723,6 +5099,10 @@ loadLocal();
   try {
     const en = await idb.get('energy');
     if (Array.isArray(en) && en.length) applyEnergyData(en, true);
+  } catch (e) {}
+  try {
+    const bi = await idb.get('bgimg');
+    if (bi && bi.url) setBgImage(bi.url, bi.name, true);
   } catch (e) {}
 })();
 

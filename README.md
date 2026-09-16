@@ -8,13 +8,24 @@ note events, trails, particles, and audio-reactive shapes for video capture.
 Open `index.html` in a browser (Chrome/Edge — needs WebGL2). No server required;
 all dependencies are vendored under `vendor/`.
 
-To avoid `file://` quirks you can also serve the folder:
+To avoid `file://` quirks — and to get folder browsing, see below — serve the
+folder instead:
 
 ```bash
 python -m http.server 8000
 ```
 
 then visit http://localhost:8000/
+
+### Folder browsing
+
+When served over http, the panel adds a dropdown under each of the MIDI,
+Energy JSON, and Preset pickers that lists files straight out of
+`midi/aligned/`, `energy/`, and `presets/` — pick one instead of hunting for
+it in the OS file dialog. It works by reading the server's directory-listing
+page (which `python -m http.server` provides for free), so it's not available
+over plain `file://` — those dropdowns just say so and the manual file
+pickers above them still work either way.
 
 ## Layout
 
