@@ -253,6 +253,18 @@
           <span class="text-xs text-cyan-400 font-mono toggle-icon">[-]</span>
         </div>
         <div id="routing-body">
+          <span class="lbl text-emerald-400">ENSEMBLE &mdash; route everything in one click</span>
+          <div class="grid grid-cols-4 gap-1 mb-1">
+            <button type="button" class="btn-sm" data-ensemble="quartet">Quartet</button>
+            <button type="button" class="btn-sm" data-ensemble="concerto">Concerto</button>
+            <button type="button" class="btn-sm" data-ensemble="duet">Duet</button>
+            <button type="button" class="btn-sm" data-ensemble="solo">Solo</button>
+          </div>
+          <div class="text-[10px] text-gray-500 mb-2 leading-snug" id="ensemble-note">
+            Clears every path and lays the piece out by <span class="text-emerald-400">register</span> &mdash;
+            highest voice on top, bass low, thick and flat. A starting point to edit, not a finished look.
+          </div>
+
           <span class="lbl text-amber-300">ON SCREEN NOW</span>
           <div id="live-strip"></div>
           <span class="lbl">PATH EDITOR</span>
@@ -3108,6 +3120,224 @@ function shapeHasTrack(sid) {
 /* Outlines a tab once its path has an instrument routed to it, so you can
    see at a glance which of the 14 paths are actually wired up. Called
    whenever any track dropdown changes, and after presets load. */
+/* ============================================================
+   ENSEMBLE PRESETS
+
+   One click lays a whole piece out. The recipes below are lifted from the
+   presets Kenneth actually settled on — the quartet from Op.135 v6, the
+   concerto from Brandenburg 4 v14, the duet from Violin Sonata 5 v5 — so the
+   numbers are his, not invented.
+
+   Three rules those presets all encode, which is what makes them transfer:
+     - register maps to height. Bass sits low (offY ~ +400), treble high.
+     - bass is thick and flat (thickScale up to 4, distY down to 0.2); treble
+       is thin and compact.
+     - a pair of related voices goes on the DNA helix, one voice per strand.
+
+   Assignment is by MEASURED register rather than track order, because track
+   order lies: Brandenburg opens with two one-note copyright tracks, and
+   Mozart's reduction is not in score order. The concerto's soloist is found
+   by name instead, since Brandenburg's Violino principale sits BELOW both
+   flutes in pitch and register alone would hand it the wrong shape.
+   ============================================================ */
+const ENSEMBLES = {
+  quartet: {
+    label: 'String quartet',
+    roles: [
+      { sid: 'stairSpiral', color: '#1fe5ff', noteShape: 'star',    lenScale: 1,   thickScale: 0.4,  offY: -58, distX: 0.75, distY: 0.75 },
+      { sid: 'bolt',        color: '#e181ee', noteShape: 'diamond', lenScale: 0.2, thickScale: 0.3,  offY: 0,   distX: 2.3,  distY: 1 },
+      { sid: 'rose',        color: '#e8a62d', noteShape: 'line',    lenScale: 1,   thickScale: 1,    offY: 0,   distX: 3,    distY: 3 },
+      { sid: 'sine',        color: '#7a2de8', noteShape: 'circle',  lenScale: 0.6, thickScale: 0.35, offY: 298, distX: 1,    distY: 0.5 }
+    ]
+  },
+  concerto: {
+    label: 'Concerto', soloist: true,
+    roles: [
+      { sid: 'spiral',  color: '#e3a857', noteShape: 'blade',   lenScale: 0.1, thickScale: 0.5,  offY: 0,    distX: 1,    distY: 1 },
+      { sid: 'dna',     pair: true, colors: ['#f0d875', '#c7ccd1'],
+                        noteShape: 'circle',  lenScale: 1,   thickScale: 0.25, offY: 258,  distX: 0.7,  distY: 0.8 },
+      { sid: 'halfsun', color: '#e8b417', noteShape: 'line',    lenScale: 0.2, thickScale: 0.2,  offY: -400, distX: 0.6,  distY: 0.2, mirror: 'lr' },
+      { sid: 'cloud',   color: '#e0ded6', noteShape: 'circle',  lenScale: 0.1, thickScale: 1,    offY: 0,    distX: 0.85, distY: 1 },
+      { sid: 'parc',    color: '#4a2e1e', noteShape: 'diamond', lenScale: 0.1, thickScale: 4.35, offY: 94,   distX: 0.8,  distY: 0.65 },
+      { sid: 'sine',    color: '#5c1a1b', noteShape: 'circle',  lenScale: 0.1, thickScale: 2.35, offY: 400,  distX: 1,    distY: 0.5 },
+      { sid: 'barc',    color: '#bab7b5', noteShape: 'circle',  lenScale: 0.1, thickScale: 4,    offY: 400,  distX: 1,    distY: 0.2 },
+      { sid: 'ladder',  color: '#c9a227', noteShape: 'line',    lenScale: 1,   thickScale: 0.5,  offY: 400,  distX: 0.85, distY: 0.45 }
+    ]
+  },
+  duet: {
+    label: 'Duet', findPair: true,
+    roles: [
+      // his offX of 192/400 were aimed at a 9:16 frame; centred here so the
+      // preset does not fall off the side of a landscape stage
+      { sid: 'stairSpiral', color: '#e85fa0', noteShape: 'flower', lenScale: 1,   thickScale: 1.35, offX: 0, offY: 0, distX: 0.75, distY: 1 },
+      { sid: 'dna',         pair: true, colors: ['#3d6039', '#88fb65'],
+                            noteShape: 'petal',  lenScale: 0.2, thickScale: 0.35, offX: 0, offY: 0, distX: 1.6,  distY: 1 }
+    ]
+  },
+  solo: {
+    label: 'Solo', spread: true,
+    roles: [
+      { sid: 'spiral', color: '#c9a227', noteShape: 'blade',  lenScale: 0.1, thickScale: 0.5, offY: 0,   distX: 1, distY: 1 },
+      { sid: 'sine',   color: '#5c1a1b', noteShape: 'circle', lenScale: 0.1, thickScale: 1.6, offY: 300, distX: 1, distY: 0.5 }
+    ]
+  }
+};
+
+/* Tracks worth routing, ordered high to low by median pitch. Tiny tracks are
+   the engraver's copyright and title lines, not music. */
+function tracksByRegister(minNotes) {
+  const out = [];
+  normTracks.forEach((arr, i) => {
+    if (!arr || arr.length < minNotes) return;
+    const p = arr.map(n => n.pitch).sort((a, b) => a - b);
+    out.push({ i: i, n: arr.length, med: p[p.length >> 1] });
+  });
+  return out.sort((a, b) => b.med - a.med || b.n - a.n);
+}
+
+function paintLane(lane, color) {
+  lane.color = color;
+  lane.ink = lightenColor(color, 0.72);
+}
+
+function applyEnsemble(key) {
+  const e = ENSEMBLES[key];
+  if (!e) return;
+  if (!normTracks.length) { showError('Load a MIDI file first — the layout is built from its tracks.'); return; }
+
+  // Solo runs off one line, so rank by note count rather than register
+  if (e.spread) { /* re-ranked below, after the tiny-track filter */ }
+
+  // start from a clean stage so nothing from the last piece lingers
+  SHAPES.forEach(s => {
+    const sc = cfg.shapes[s.id];
+    sc.track = 'none';
+    sc.lanes.forEach(l => { l.track = 'shared'; l.on = true; });
+  });
+
+  let ranked = tracksByRegister(8);
+  if (!ranked.length) ranked = tracksByRegister(1);
+
+  // A duet's lead is the MELODIC voice, not the highest one — a piano's right
+  // hand routinely out-ranks the violin it is accompanying. Find the pair
+  // first (two parts of one instrument share a name, "Piano RH"/"Piano LH")
+  // and whatever is left over is the lead.
+  if (e.findPair && ranked.length > 2) {
+    const first = t => (((trackMeta[t.i] && trackMeta[t.i].name) || '').toLowerCase().match(/[a-z]+/) || [''])[0];
+    const byName = {};
+    ranked.forEach(t => { (byName[first(t)] = byName[first(t)] || []).push(t); });
+    const pairKey = Object.keys(byName).find(k => k && byName[k].length === 2);
+    if (pairKey) {
+      const pair = byName[pairKey];
+      const rest = ranked.filter(t => pair.indexOf(t) < 0);
+      if (rest.length) ranked = [rest[0]].concat(pair, rest.slice(1));
+    }
+  }
+
+  if (e.spread) ranked = ranked.slice().sort((a, b) => b.n - a.n);
+
+  if (e.soloist && ranked.length > 1) {
+    let pick = -1;
+    for (let k = 0; k < ranked.length; k++) {
+      const nm = ((trackMeta[ranked[k].i] && trackMeta[ranked[k].i].name) || '').toLowerCase();
+      if (nm.indexOf('solo') >= 0 || nm.indexOf('principal') >= 0) { pick = k; break; }
+    }
+    if (pick < 0) {                       // no name to go on — the busiest part leads
+      let best = 0;
+      ranked.forEach((t, k) => { if (t.n > ranked[best].n) best = k; });
+      pick = best;
+    }
+    ranked.unshift(ranked.splice(pick, 1)[0]);
+  }
+
+  // With fewer voices than roles, taking the first N would leave the bass on
+  // a treble shape — Mozart's five parts put Cello & Bass up on the Clouds.
+  // Sample the roles across their whole span instead, so the lowest voice
+  // always lands on the lowest-sitting shape.
+  let roles = e.roles;
+  if (!e.spread) {
+    const head = e.roles.findIndex(r => !r.pair && r !== e.roles[0]);
+    const fixed = head < 0 ? e.roles.length : head;      // soloist + pair stay put
+    let voices = ranked.length;
+    for (let k = 0; k < fixed; k++) voices -= e.roles[k].pair ? 2 : 1;
+    const tail = e.roles.slice(fixed);
+    if (voices > 0 && voices < tail.length) {
+      const picked = [];
+      for (let j = 0; j < voices; j++) {
+        picked.push(tail[voices === 1 ? 0 : Math.round(j * (tail.length - 1) / (voices - 1))]);
+      }
+      roles = e.roles.slice(0, fixed).concat(picked);
+    }
+  }
+
+  let used = 0, placed = 0;
+  for (const role of roles) {
+    if (used >= ranked.length && !e.spread) break;
+    const s = SHAPE_BY_ID[role.sid];
+    const sc = cfg.shapes[role.sid];
+    if (!s || !sc) continue;
+
+    ['noteShape', 'lenScale', 'thickScale', 'offX', 'offY', 'distX', 'distY', 'mirror']
+      .forEach(k => { if (role[k] !== undefined) sc[k] = role[k]; });
+
+    if (role.pair) {
+      // one voice per helix strand: sub-lane 0/1 is strand A, 2/3 is strand B
+      const a = ranked[used], b = ranked[used + 1] || a;
+      sc.track = 'none';
+      sc.lanes.forEach((l, li) => {
+        const strandB = (li % 4) >= 2;
+        l.track = String((strandB ? b : a).i);
+        paintLane(l, role.colors[strandB ? 1 : 0]);
+      });
+      used += (ranked[used + 1] ? 2 : 1);
+    } else if (e.spread) {
+      // One line on every lane. Deliberately the track with the MOST notes,
+      // not the highest: a split transcription's leftover chord-tone tracks
+      // sit high in pitch and would otherwise beat the real part to the top.
+      sc.track = String(ranked[0].i);
+      sc.lanes.forEach(l => { l.track = 'shared'; paintLane(l, role.color); });
+    } else {
+      sc.track = String(ranked[used].i);
+      sc.lanes.forEach(l => { l.track = 'shared'; paintLane(l, role.color); });
+      used += 1;
+    }
+    placed += 1;
+  }
+
+  cfg.mode = 'locked';                 // one shared pitch range across every path
+  if (typeof autofitLockRange === 'function') autofitLockRange();
+  resetScanners();
+  firstNote = null;
+  invalidateBlueprint();
+  writeConfigToDOM();
+  if (trackMeta.length) populateTrackSelects();
+  refreshTabTrackHighlights();
+  if (typeof computeFirstNote === 'function') computeFirstNote();
+  saveLocal();
+
+  const note = document.getElementById('ensemble-note');
+  if (!note) return;
+  if (e.spread) {
+    const extra = tracksByRegister(1).length - 1;
+    note.textContent = e.label + ': ' + placed + ' paths on '
+      + ((trackMeta[ranked[0].i] && trackMeta[ranked[0].i].name) || 'the line')
+      + (extra > 0
+          ? '. ' + extra + ' other track' + (extra > 1 ? 's' : '') + ' ignored — this '
+            + 'transcription splits chords across tracks, so use the _merged file instead.'
+          : '.');
+  } else {
+    const spare = Math.max(0, ranked.length - used);
+    note.textContent = e.label + ': ' + placed + ' path' + (placed > 1 ? 's' : '')
+      + ' from ' + used + ' track' + (used > 1 ? 's' : '')
+      + (spare ? ', ' + spare + ' left unrouted — assign them below.' : '.');
+  }
+}
+
+document.querySelectorAll('[data-ensemble]').forEach(btn => {
+  btn.addEventListener('click', function () { applyEnsemble(btn.dataset.ensemble); });
+});
+
+
 /* What is actually drawing, as opposed to what is merely wired up.
    shapeHasTrack() and usedTracksMap() both ignore a lane's ON box on
    purpose — they answer "is this assigned", which is a different question
