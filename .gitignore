@@ -15,6 +15,14 @@ mam-capture*.webm
 *_energy.json
 energy/
 
+# Working files for the alignment pipeline — one-off probes, fitted anchors,
+# cached numpy arrays. Regenerated on demand and specific to one repair.
+scratch/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
 # OS / editor cruft
 Thumbs.db
 .DS_Store
