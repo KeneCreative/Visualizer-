@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Legend Maker — MAM</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root{
+    --bg:#0b0c10; --panel:rgba(14,15,22,.92); --line:#2a2f3a; --txt:#e5e7eb;
+    --muted:#8b96a8; --accent:#67e8f9; --amber:#fbbf24;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);
+    font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;overflow:hidden}
+  /* Bare mode is what an OBS browser source loads: the page itself goes
+     fully transparent and every control disappears, leaving only the card. */
+  html.bare,html.bare body{background:transparent!important;overflow:hidden}
+  html.bare .panel,html.bare .actions,html.bare .hint{display:none!important}
+  html.bare .checker{background:none!important;box-shadow:none!important}
+  html.bare .stage{padding:0}
+
+  .wrap{display:flex;height:100%}
+  .panel{width:360px;flex:0 0 360px;background:var(--panel);border-right:1px solid var(--line);
+    overflow-y:auto;padding:16px}
+  .stage{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:14px;padding:20px;min-width:0}
+  .checker{border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.6);
+    background-color:#3a3a42;
+    background-image:linear-gradient(45deg,#2c2c33 25%,transparent 25%,transparent 75%,#2c2c33 75%),
+                     linear-gradient(45deg,#2c2c33 25%,transparent 25%,transparent 75%,#2c2c33 75%);
+    background-size:20px 20px;background-position:0 0,10px 10px;max-width:100%}
+  .checker.plain{background:none;box-shadow:none}
+  canvas{display:block;max-width:100%;height:auto}
+
+  h1{font-size:14px;margin:0 0 2px;letter-spacing:.06em;text-transform:uppercase;color:#fff}
+  .sub{font-size:11px;color:var(--muted);margin:0 0 14px;line-height:1.5}
+  .hd{font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--accent);
+    text-transform:uppercase;margin:18px 0 6px;padding-top:12px;border-top:1px solid var(--line)}
+  .hd:first-of-type{border-top:none;padding-top:0;margin-top:10px}
+  label.lbl{display:block;font-size:10px;letter-spacing:.05em;color:var(--muted);
+    text-transform:uppercase;margin:9px 0 3px}
+  input,select,button,textarea{font-family:inherit;font-size:12px;color:var(--txt)}
+  input[type=text],input[type=number],select,textarea{width:100%;background:rgba(0,0,0,.35);
+    border:1px solid #3a3f4a;border-radius:4px;padding:5px 6px}
+  input[type=range]{width:100%;accent-color:var(--accent)}
+  input[type=color]{width:100%;height:26px;padding:1px 2px;border:1px solid #555;
+    border-radius:4px;background:transparent;cursor:pointer}
+  .btn{background:rgba(255,255,255,.08);border:1px solid #444;color:#ccc;font-size:11px;
+    padding:7px 9px;border-radius:5px;cursor:pointer;text-transform:uppercase;letter-spacing:.04em}
+  .btn:hover{background:rgba(255,255,255,.18);color:#fff}
+  .btn.go{background:linear-gradient(135deg,#00ffaa,#00aaff);color:#000;font-weight:700;border:none}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+  .ro{float:right;font-family:ui-monospace,monospace;color:#cbd5e1}
+
+  .row{display:grid;grid-template-columns:22px 1fr 26px 22px 22px;gap:5px;align-items:center;
+    background:rgba(255,255,255,.04);border-radius:5px;padding:5px;margin-bottom:5px}
+  .row .drag{cursor:grab;color:var(--muted);text-align:center;font-size:13px;user-select:none}
+  .row.dragging{opacity:.4}
+  .row.over{box-shadow:inset 0 2px 0 var(--accent)}
+  .row select.shp{grid-column:2/4;font-size:11px}
+  .mini{background:rgba(255,255,255,.08);border:1px solid #444;color:#bbb;border-radius:3px;
+    font-size:11px;line-height:1;padding:4px 0;cursor:pointer;font-family:ui-monospace,monospace}
+  .mini:hover{background:rgba(255,255,255,.18);color:#fff}
+  .mini.off{opacity:.35}
+  .rowtop{display:grid;grid-template-columns:22px 1fr 26px 22px 22px;gap:5px;align-items:center;
+    margin-bottom:4px}
+  .actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+  .hint{font-size:11px;color:var(--muted);max-width:640px;text-align:center;line-height:1.6}
+  .note{font-size:10px;color:var(--muted);line-height:1.5;margin-top:5px}
+  .err{color:#fda4af;font-size:11px;margin-top:6px;min-height:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <aside class="panel">
+    <h1>Legend Maker</h1>
+    <p class="sub">Builds the instrument key for your videos — name, colour and shape per part.
+    Draws straight onto a canvas, so <b>Download PNG</b> gives you a genuinely transparent file,
+    and <b>bare mode</b> gives an OBS browser source that plays the intro once and fades out.</p>
+
+    <div class="hd">Instruments</div>
+    <div class="rowtop" style="font-size:9px;color:var(--muted);letter-spacing:.05em">
+      <span></span><span>NAME / SHAPE</span><span>COL</span><span></span><span></span>
+    </div>
+    <div id="rows"></div>
+    <div class="grid2" style="margin-top:8px">
+      <button class="btn" id="add">+ Instrument</button>
+      <button class="btn" id="import">Import preset</button>
+    </div>
+    <input type="file" id="file" accept=".json" style="display:none">
+    <div class="err" id="err"></div>
+    <div class="note">Import reads a preset from the visualizer's <code>presets/</code> folder and
+      pulls in every routed part with its colour and shape. Presets don't carry the MIDI's track
+      names, so parts arrive as "Track 3" unless you'd named them in the legend editor — rename
+      them here.</div>
+
+    <div class="hd">Card</div>
+    <label class="lbl">Marker &mdash; what sits next to each name</label>
+    <select id="marker">
+      <option value="box">Colour box</option>
+      <option value="dot">Colour dot</option>
+      <option value="glyph">Note glyph &mdash; star, petal, blade&hellip;</option>
+      <option value="path">Path shape &mdash; spiral, DNA, bolt&hellip;</option>
+    </select>
+    <div class="note">Colour box or dot when the shapes would only be noise.
+      <b>Note glyph</b> is the shape of an individual note; <b>path shape</b> is the
+      curve it travels along. Each instrument remembers both, so switching back
+      and forth never loses a choice.</div>
+    <label class="lbl">Title <span class="ro" id="ro-title"></span></label>
+    <input type="text" id="title" placeholder="(optional) e.g. String Quartet Op. 135">
+    <div class="grid2">
+      <div><label class="lbl">Layout</label>
+        <select id="layout">
+          <option value="1">Single column</option>
+          <option value="2">Two columns</option>
+          <option value="row">One horizontal row</option>
+        </select></div>
+      <div><label class="lbl">Text colour</label><input type="color" id="fg" value="#ffffff"></div>
+    </div>
+    <div class="grid2">
+      <div><label class="lbl">Backdrop</label>
+        <select id="back">
+          <option value="none">None — fully transparent</option>
+          <option value="panel">Soft dark panel</option>
+          <option value="solid">Solid colour</option>
+        </select></div>
+      <div><label class="lbl">Backdrop colour</label><input type="color" id="backcol" value="#0a0a0f"></div>
+    </div>
+    <label class="lbl">Backdrop opacity <span class="ro" id="ro-backa">0.72</span></label>
+    <input type="range" id="backa" min="0" max="1" step="0.02" value="0.72">
+    <div class="grid3">
+      <div><label class="lbl">Text <span class="ro" id="ro-fs">30</span></label>
+        <input type="range" id="fs" min="10" max="90" step="1" value="30"></div>
+      <div><label class="lbl">Icon <span class="ro" id="ro-is">34</span></label>
+        <input type="range" id="is" min="10" max="120" step="1" value="34"></div>
+      <div><label class="lbl">Gap <span class="ro" id="ro-gap">16</span></label>
+        <input type="range" id="gap" min="0" max="60" step="1" value="16"></div>
+    </div>
+    <div class="grid3">
+      <div><label class="lbl">Pad <span class="ro" id="ro-pad">28</span></label>
+        <input type="range" id="pad" min="0" max="90" step="1" value="28"></div>
+      <div><label class="lbl">Radius <span class="ro" id="ro-rad">14</span></label>
+        <input type="range" id="rad" min="0" max="48" step="1" value="14"></div>
+      <div><label class="lbl">Glow <span class="ro" id="ro-glow">0.8</span></label>
+        <input type="range" id="glow" min="0" max="2" step="0.05" value="0.8"></div>
+    </div>
+    <label class="lbl">Font</label>
+    <select id="font">
+      <option value="'Inter',system-ui,-apple-system,'Segoe UI',sans-serif">Inter / system sans</option>
+      <option value="Georgia,'Times New Roman',serif">Serif</option>
+      <option value="ui-monospace,'Cascadia Mono',Consolas,monospace">Monospace</option>
+      <option value="'Segoe UI Semibold','Inter',system-ui,sans-serif">Segoe semibold</option>
+      <option value="'Perpetua Titling MT','Perpetua','Palatino Linotype',Georgia,serif">Perpetua Titling MT</option>
+    </select>
+    <div class="grid2" style="margin-top:8px">
+      <label style="font-size:11px;display:flex;gap:6px;align-items:center;cursor:pointer">
+        <input type="checkbox" id="bold" checked> Bold names</label>
+      <label style="font-size:11px;display:flex;gap:6px;align-items:center;cursor:pointer">
+        <input type="checkbox" id="showshape"> Shape name</label>
+    </div>
+
+    <div class="hd">Intro animation</div>
+    <div class="grid2">
+      <div><label class="lbl">Entrance</label>
+        <select id="anim">
+          <option value="fade">Fade</option>
+          <option value="up">Rise + fade</option>
+          <option value="left">Slide from left</option>
+          <option value="scale">Scale up</option>
+        </select></div>
+      <div><label class="lbl">Stagger <span class="ro" id="ro-stag">0.12</span>s</label>
+        <input type="range" id="stag" min="0" max="0.6" step="0.01" value="0.12"></div>
+    </div>
+    <div class="grid3">
+      <div><label class="lbl">Delay <span class="ro" id="ro-d0">0.4</span></label>
+        <input type="range" id="d0" min="0" max="5" step="0.1" value="0.4"></div>
+      <div><label class="lbl">In <span class="ro" id="ro-din">0.6</span></label>
+        <input type="range" id="din" min="0.1" max="3" step="0.1" value="0.6"></div>
+      <div><label class="lbl">Hold <span class="ro" id="ro-hold">4</span></label>
+        <input type="range" id="hold" min="0" max="20" step="0.5" value="4"></div>
+    </div>
+    <label class="lbl">Fade out <span class="ro" id="ro-dout">1.2</span>s</label>
+    <input type="range" id="dout" min="0" max="5" step="0.1" value="1.2">
+    <div class="note" id="total"></div>
+
+    <div class="hd">Output</div>
+    <label class="lbl">PNG scale <span class="ro" id="ro-scale">2</span>x</label>
+    <input type="range" id="scale" min="1" max="4" step="1" value="2">
+    <div class="grid2" style="margin-top:8px">
+      <button class="btn" id="save">Save layout</button>
+      <button class="btn" id="load">Load layout</button>
+    </div>
+    <input type="file" id="lfile" accept=".json" style="display:none">
+    <div class="note">Layouts save as their own JSON, separate from visualizer presets.
+      Whatever you have here is also remembered in this browser automatically.</div>
+
+    <div class="hd">Video &mdash; Premiere</div>
+    <div class="grid2">
+      <div><label class="lbl">Frame rate</label>
+        <select id="fps">
+          <option value="23.976">23.976</option><option value="24">24</option>
+          <option value="25">25</option><option value="29.97">29.97</option>
+          <option value="30" selected>30</option><option value="50">50</option>
+          <option value="59.94">59.94</option><option value="60">60</option>
+        </select></div>
+      <div><label class="lbl">&nbsp;</label>
+        <button class="btn go" id="seq" style="width:100%">Export sequence</button></div>
+    </div>
+    <div class="note" id="seqinfo"></div>
+    <div class="note">Downloads one <code>.zip</code> of numbered PNGs with real alpha.
+      In Premiere: <b>File &rarr; Import</b>, select <code>legend_0000.png</code>, tick
+      <b>Image Sequence</b>. Set the frame rate here to match your sequence, or fix it
+      afterwards with <b>right-click &rarr; Modify &rarr; Interpret Footage</b> &mdash; Premiere
+      otherwise assumes its own default and your timing drifts.</div>
+  </aside>
+
+  <main class="stage">
+    <div class="checker" id="checker"><canvas id="card"></canvas></div>
+    <div class="actions">
+      <button class="btn go" id="play">▶ Play intro</button>
+      <button class="btn" id="png">⬇ Download PNG</button>
+      <button class="btn" id="obs">Copy OBS link</button>
+      <button class="btn" id="chk">Hide checkerboard</button>
+    </div>
+    <div class="hint" id="hint">
+      The checkerboard is preview only — it is never drawn into the PNG.
+      Press <b>B</b> for bare mode (card only, nothing else), <b>Space</b> to replay the intro.
+    </div>
+  </main>
+</div>
+
+<script>
+'use strict';
+
+/* ============================================================
+   SHAPES
+
+   The same 21 paths the visualizer routes tracks onto, so "Violin I is the
+   star" reads the same here as it does on stage. These are icons rather than
+   literal traces of the stage geometry — a Fibonacci spiral drawn at 34px
+   has to read as a spiral, not be mathematically faithful to one.
+   ============================================================ */
+const TAU = Math.PI * 2;
+const SHAPES = [
+  ['diag','Yellow Diagonals','#ffff00'], ['pent','Cyan Pentagon','#00ffff'],
+  ['ring','Green Center Ring','#00ffaa'], ['ladder','Light Blue Ladders','#88ccff'],
+  ['diam','Magenta Diamond','#ff00ff'], ['parc','Purple Arcs','#aa00ff'],
+  ['barc','Blue Top Arc','#0066ff'], ['liss','Amber Lissajous','#ffb000'],
+  ['spiral','Golden Fibonacci Spiral','#ffaa00'], ['hypo','Rose Hypocycloid','#ff0055'],
+  ['stairSpiral','Spiral Staircase','#cddcff'], ['sine','Sine Wave','#a8ff00'],
+  ['heart','Red Heart','#ff3366'], ['rose','Rose Curve','#ff8a00'],
+  ['bolt','Lightning Bolt','#fff34d'], ['dna','DNA Double Helix','#7c4dff'],
+  ['cloud','Clouds','#bcd8ff'], ['sun','Sun','#ffcc33'], ['halfsun','Half Sun','#ffb020'],
+  ['grass','Grass','#7ddc5e'], ['cross','Crucifix','#ff5555']
+];
+const SHAPE_NAME = Object.fromEntries(SHAPES.map(s => [s[0], s[1]]));
+const SHAPE_COL  = Object.fromEntries(SHAPES.map(s => [s[0], s[2]]));
+
+/* Every icon draws inside a box of radius r centred on the origin, and only
+   builds the path — stroke/fill styling is the caller's job so the glow pass
+   and the core pass can share one definition. */
+function curve(c, fn, n, close) {
+  for (let i = 0; i <= n; i++) {
+    const p = fn(i / n);
+    i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1]);
+  }
+  if (close) c.closePath();
+}
+const ICON = {
+  diag(c,r){ c.moveTo(-r,r); c.lineTo(r,-r); c.moveTo(-r,-r*.35); c.lineTo(r*.62,r); },
+  pent(c,r){ curve(c,u=>{const a=u*TAU-Math.PI/2;return [r*Math.cos(a),r*Math.sin(a)];},5,true); },
+  ring(c,r){ c.moveTo(r,0); c.arc(0,0,r,0,TAU); },
+  ladder(c,r){ const w=r*.62; c.moveTo(-w,-r);c.lineTo(-w,r); c.moveTo(w,-r);c.lineTo(w,r);
+    for(let i=0;i<4;i++){const y=-r+ (i+.5)*(2*r/4); c.moveTo(-w,y); c.lineTo(w,y);} },
+  diam(c,r){ c.moveTo(0,-r);c.lineTo(r,0);c.lineTo(0,r);c.lineTo(-r,0);c.closePath(); },
+  parc(c,r){ c.moveTo(r,0); c.arc(0,0,r,-Math.PI*.85,Math.PI*.85);
+             c.moveTo(r*.55,0); c.arc(0,0,r*.55,-Math.PI*.85,Math.PI*.85); },
+  barc(c,r){ c.moveTo(-r,r*.55); c.quadraticCurveTo(0,-r*1.15,r,r*.55); },
+  liss(c,r){ curve(c,u=>{const a=u*TAU;return [r*Math.sin(3*a),r*Math.sin(2*a)];},120,false); },
+  spiral(c,r){ const b=.3063489957,T=2.6*TAU,g=Math.exp(b*T)-1;
+    curve(c,u=>{const th=u*T,rr=r*((Math.exp(b*th)-1)/g);
+      return [rr*Math.cos(th-Math.PI/2),rr*Math.sin(th-Math.PI/2)];},160,false); },
+  hypo(c,r){ const k=5,R=r,rr=R/k,m=(R-rr)/rr;
+    curve(c,u=>{const th=u*TAU;return [(R-rr)*Math.cos(th)+rr*Math.cos(m*th),
+                                        (R-rr)*Math.sin(th)-rr*Math.sin(m*th)];},220,true); },
+  stairSpiral(c,r){ curve(c,u=>[r*.8*Math.sin(u*3.2*TAU),-r+u*2*r],140,false);
+    curve(c,u=>[-r*.8*Math.sin(u*3.2*TAU),-r+u*2*r],140,false); },
+  sine(c,r){ curve(c,u=>[-r+u*2*r,-r*.75*Math.sin(u*2*TAU)],120,false); },
+  heart(c,r){ const s=r/16;
+    curve(c,u=>{const a=u*TAU;return [16*Math.pow(Math.sin(a),3)*s,
+      -(13*Math.cos(a)-5*Math.cos(2*a)-2*Math.cos(3*a)-Math.cos(4*a))*s];},160,true); },
+  rose(c,r){ curve(c,u=>{const th=u*TAU,rr=r*Math.cos(5*th);
+    return [rr*Math.cos(th),rr*Math.sin(th)];},260,true); },
+  bolt(c,r){ c.moveTo(r*.28,-r); c.lineTo(-r*.55,r*.12); c.lineTo(-r*.05,r*.12);
+    c.lineTo(-r*.34,r); c.lineTo(r*.6,-r*.18); c.lineTo(r*.06,-r*.18); c.closePath(); },
+  dna(c,r){ curve(c,u=>[r*.7*Math.sin(u*2*TAU),-r+u*2*r],120,false);
+    curve(c,u=>[r*.7*Math.sin(u*2*TAU+Math.PI),-r+u*2*r],120,false);
+    for(let i=0;i<5;i++){const u=(i+.5)/5,y=-r+u*2*r,x=r*.7*Math.sin(u*2*TAU);
+      c.moveTo(x,y); c.lineTo(-x,y);} },
+  cloud(c,r){ c.moveTo(-r,r*.42); c.arc(-r*.5,r*.1,r*.45,Math.PI*.9,Math.PI*1.9);
+    c.arc(r*.05,-r*.16,r*.55,Math.PI*1.2,Math.PI*1.95);
+    c.arc(r*.6,r*.1,r*.42,Math.PI*1.55,Math.PI*.35); c.closePath(); },
+  sun(c,r){ c.moveTo(r*.46,0); c.arc(0,0,r*.46,0,TAU);
+    for(let i=0;i<8;i++){const a=i*TAU/8;
+      c.moveTo(Math.cos(a)*r*.68,Math.sin(a)*r*.68);
+      c.lineTo(Math.cos(a)*r,Math.sin(a)*r);} },
+  halfsun(c,r){ c.moveTo(-r*.55,r*.5); c.arc(0,r*.5,r*.55,Math.PI,0);
+    for(let i=0;i<5;i++){const a=Math.PI+(i+.5)*(Math.PI/5);
+      c.moveTo(Math.cos(a)*r*.72,r*.5+Math.sin(a)*r*.72);
+      c.lineTo(Math.cos(a)*r*1.05,r*.5+Math.sin(a)*r*1.05);} },
+  grass(c,r){ for(let i=0;i<5;i++){const x=-r+ (i+.5)*(2*r/5), lean=(i-2)*r*.16;
+      c.moveTo(x,r); c.quadraticCurveTo(x+lean*.5,0,x+lean,-r*.85);} },
+  cross(c,r){ c.moveTo(0,-r); c.lineTo(0,r); c.moveTo(-r*.6,-r*.28); c.lineTo(r*.6,-r*.28); }
+};
+/* ============================================================
+   NOTE GLYPHS
+
+   The shape of an individual NOTE on stage, which is a different question
+   from which path it travels. These reproduce the signed-distance forms the
+   visualizer's shader uses, so a "Star (5)" here is the same star: form 1 is
+   a regular polygon, form 2 a star whose inner radius is 0.42 of its outer,
+   form 3 a flower of r = 0.55 + 0.45*cos(n*a).
+   ============================================================ */
+const GLYPHS = [
+  ['line','Line / Bar'], ['streak','Streak (soft ends)'], ['comet','Comet (head + tail)'],
+  ['blade','Blade (pointed ends)'], ['circle','Circle'], ['ring','Ring'], ['square','Square'],
+  ['triangle','Triangle'], ['diamond','Diamond'], ['pentagon','Pentagon'], ['hexagon','Hexagon'],
+  ['star','Star (5)'], ['star6','Star (6)'], ['flower','Flower'], ['petal','Petal'],
+  ['starburst','Starburst']
+];
+const GLYPH_NAME = Object.fromEntries(GLYPHS);
+const POLY = { triangle:3, diamond:4, pentagon:5, hexagon:6 };
+const STAR = { star:5, star6:6, starburst:8 };
+const FLOWER = { flower:6, petal:4 };
+
+function polar(c, r, f, n, dir) {
+  for (let i = 0; i <= n; i++) {
+    const a = (dir < 0 ? -1 : 1) * (i / n) * TAU, rr = f(Math.abs(a) * (dir < 0 ? -1 : 1));
+    const x = rr * Math.cos(a), y = rr * Math.sin(a);
+    i ? c.lineTo(x, y) : c.moveTo(x, y);
+  }
+  c.closePath();
+}
+function roundBar(c, hw, hh, rad) {
+  if (c.roundRect) { c.roundRect(-hw, -hh, hw * 2, hh * 2, rad); return; }
+  c.moveTo(-hw + rad, -hh); c.lineTo(hw - rad, -hh);
+  c.arcTo(hw, -hh, hw, -hh + rad, rad); c.lineTo(hw, hh - rad);
+  c.arcTo(hw, hh, hw - rad, hh, rad); c.lineTo(-hw + rad, hh);
+  c.arcTo(-hw, hh, -hw, hh - rad, rad); c.lineTo(-hw, -hh + rad);
+  c.arcTo(-hw, -hh, -hw + rad, -hh, rad); c.closePath();
+}
+function glyphPath(c, id, r) {
+  if (id === 'line' || id === 'streak') return roundBar(c, r, r * 0.30, r * 0.30);
+  if (id === 'square') return roundBar(c, r * 0.76, r * 0.76, r * 0.14);
+  if (id === 'circle') { c.moveTo(r * 0.82, 0); c.arc(0, 0, r * 0.82, 0, TAU); return; }
+  if (id === 'ring') {              // outer then inner wound the other way = a hole
+    c.moveTo(r * 0.86, 0); c.arc(0, 0, r * 0.86, 0, TAU);
+    c.moveTo(r * 0.56, 0); c.arc(0, 0, r * 0.56, TAU, 0, true);
+    return;
+  }
+  if (id === 'comet') {
+    c.moveTo(-r, 0);
+    c.quadraticCurveTo(r * 0.05, -r * 0.36, r * 0.42, -r * 0.34);
+    c.arc(r * 0.42, 0, r * 0.34, -Math.PI / 2, Math.PI / 2);
+    c.quadraticCurveTo(r * 0.05, r * 0.36, -r, 0);
+    return c.closePath();
+  }
+  if (id === 'blade') {
+    c.moveTo(-r, 0); c.quadraticCurveTo(0, -r * 0.46, r, 0);
+    c.quadraticCurveTo(0, r * 0.46, -r, 0);
+    return c.closePath();
+  }
+  if (POLY[id]) {
+    const n = POLY[id];
+    return curve(c, u => { const a = u * TAU - Math.PI / 2;
+      return [r * 0.92 * Math.cos(a), r * 0.92 * Math.sin(a)]; }, n, true);
+  }
+  if (STAR[id]) {
+    const n = STAR[id], seg = TAU / n;
+    const f = a => { const tw = Math.abs(((a % seg) + seg) % seg / seg * 2 - 1);
+                     return r * (0.42 + 0.58 * tw); };
+    polar(c, r, f, n * 24, 1);
+    if (id === 'starburst') { c.moveTo(r * 0.22, 0); c.arc(0, 0, r * 0.22, TAU, 0, true); }
+    return;
+  }
+  if (FLOWER[id]) {
+    const n = FLOWER[id];
+    return polar(c, r, a => r * (0.55 + 0.45 * Math.cos(n * a)), 260, 1);
+  }
+  c.moveTo(r * 0.8, 0); c.arc(0, 0, r * 0.8, 0, TAU);
+}
+
+/* One marker, whichever kind the card is set to. */
+function drawMarker(c, it, cx, cy, size, glowAmt, alpha, mode) {
+  const r = size / 2, col = it.color;
+  if (mode === 'path') return drawIcon(c, it.shape, cx, cy, size, col, glowAmt, alpha);
+  c.save();
+  c.translate(cx, cy);
+  c.globalAlpha = alpha;
+  if (glowAmt > 0) { c.shadowColor = col; c.shadowBlur = size * 0.45 * glowAmt; }
+  c.fillStyle = col;
+  c.beginPath();
+  if (mode === 'box')      roundBar(c, r * 0.88, r * 0.88, r * 0.20);
+  else if (mode === 'dot') { c.moveTo(r * 0.86, 0); c.arc(0, 0, r * 0.86, 0, TAU); }
+  else                     glyphPath(c, it.glyph || 'circle', r * 0.94);
+  // 'streak' feathers away at both ends on stage, so fade it here too
+  if (mode === 'glyph' && it.glyph === 'streak') {
+    const g = c.createLinearGradient(-r, 0, r, 0);
+    g.addColorStop(0, hexA(col, 0)); g.addColorStop(0.5, col); g.addColorStop(1, hexA(col, 0));
+    c.fillStyle = g;
+  }
+  c.fill('evenodd');
+  c.restore();
+}
+
+/* Shapes that read as a filled silhouette rather than an outline. */
+const FILLED = new Set(['diam','bolt','heart','cloud','pent']);
+
+function drawIcon(c, id, cx, cy, size, color, glowAmt, alpha) {
+  const r = size / 2;
+  c.save();
+  c.translate(cx, cy);
+  c.globalAlpha = alpha;
+  c.lineWidth = Math.max(1.2, size * 0.085);
+  c.lineJoin = 'round'; c.lineCap = 'round';
+  const path = ICON[id] || ICON.ring;
+  if (glowAmt > 0) {
+    c.shadowColor = color;
+    c.shadowBlur = size * 0.5 * glowAmt;
+  }
+  // two passes: the coloured body, then a pale core so the glyph keeps a
+  // bright centre the way a lit note does on stage
+  for (const pass of [0, 1]) {
+    c.beginPath(); path(c, r * 0.92);
+    if (pass === 0) {
+      c.strokeStyle = color; c.fillStyle = color;
+      FILLED.has(id) ? c.fill() : c.stroke();
+    } else {
+      c.shadowBlur = 0;
+      c.globalAlpha = alpha * 0.55;
+      c.strokeStyle = lighten(color, 0.7);
+      c.lineWidth = Math.max(0.8, size * 0.03);
+      c.stroke();
+    }
+  }
+  c.restore();
+}
+function lighten(hex, amt) {
+  let h = String(hex).replace('#', '');
+  if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+  const n = parseInt(h, 16) || 0;
+  const m = v => Math.round(v + (255 - v) * amt).toString(16).padStart(2, '0');
+  return '#' + m((n>>16)&255) + m((n>>8)&255) + m(n&255);
+}
+function hexA(hex, a) {
+  let h = String(hex).replace('#', '');
+  if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+  const n = parseInt(h, 16) || 0;
+  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
+}
+
+/* ============================================================
+   STATE
+   ============================================================ */
+function defaults() {
+  return {
+    title: '',
+    // marker: 'box' | 'dot' | 'glyph' | 'path'. Each item keeps BOTH a path
+    // shape and a note glyph, so switching marker mode never loses a choice.
+    marker: 'path',
+    items: [
+      { name: 'Violin I',  shape: 'hypo',   glyph: 'star',   color: '#ff0055', on: true },
+      { name: 'Violin II', shape: 'spiral', glyph: 'circle', color: '#ffaa00', on: true },
+      { name: 'Viola',     shape: 'sine',   glyph: 'blade',  color: '#a8ff00', on: true },
+      { name: 'Cello',     shape: 'dna',    glyph: 'petal',  color: '#7c4dff', on: true }
+    ],
+    layout: '1', fg: '#ffffff', back: 'none', backcol: '#0a0a0f', backa: 0.72,
+    fs: 30, is: 34, gap: 16, pad: 28, rad: 14, glow: 0.8, bold: true, showshape: false,
+    font: "'Inter',system-ui,-apple-system,'Segoe UI',sans-serif",
+    anim: 'up', stag: 0.12, d0: 0.4, din: 0.6, hold: 4, dout: 1.2, scale: 2
+  };
+}
+let S = defaults();
+try {
+  const raw = localStorage.getItem('mam-legend');
+  if (raw) S = Object.assign(defaults(), JSON.parse(raw));
+} catch (e) {}
+const save = () => { try { localStorage.setItem('mam-legend', JSON.stringify(S)); } catch (e) {} };
+
+const canvas = document.getElementById('card');
+const ctx = canvas.getContext('2d');
+const rowsEl = document.getElementById('rows');
+const errEl = document.getElementById('err');
+const showErr = m => { errEl.textContent = m || ''; if (m) setTimeout(() => { errEl.textContent = ''; }, 6000); };
+
+/* ============================================================
+   LAYOUT + DRAW
+
+   Everything is measured and painted on the canvas rather than laid out in
+   the DOM. That is what makes "Download PNG" exact: what you see is the same
+   code path that writes the file, and transparency is real rather than a
+   screenshot of a checkerboard.
+   ============================================================ */
+function visible() { return S.items.filter(i => i.on !== false); }
+/* The small caption under a name — the shape or glyph it stands for. A plain
+   colour box has nothing to name, so there is no caption in those modes. */
+function subFor(it) {
+  if (!S.showshape) return '';
+  if (S.marker === 'path')  return SHAPE_NAME[it.shape] || '';
+  if (S.marker === 'glyph') return GLYPH_NAME[it.glyph] || '';
+  return '';
+}
+const subLines = () => S.showshape && (S.marker === 'path' || S.marker === 'glyph');
+
+function measure(sc) {
+  const items = visible();
+  const fs = S.fs * sc, is = S.is * sc, gap = S.gap * sc, pad = S.pad * sc;
+  const iconGap = Math.max(8, fs * 0.42);
+  ctx.font = `${S.bold ? 600 : 400} ${fs}px ${S.font}`;
+  const textW = it => {
+    let w = ctx.measureText(it.name || '').width;
+    if (subFor(it)) {
+      ctx.save(); ctx.font = `400 ${fs * 0.62}px ${S.font}`;
+      w = Math.max(w, ctx.measureText(subFor(it)).width);
+      ctx.restore();
+    }
+    return w;
+  };
+  const cellH = Math.max(is, fs * (subLines() ? 2.0 : 1.25));
+  const cellW = items.length ? Math.max(...items.map(it => is + iconGap + textW(it))) : 10;
+
+  let titleH = 0, titleF = fs * 1.15;
+  if (S.title.trim()) {
+    ctx.font = `700 ${titleF}px ${S.font}`;
+    titleH = titleF * 1.5;
+  }
+  let cols = 1, rows = items.length;
+  if (S.layout === '2') { cols = Math.min(2, items.length || 1); rows = Math.ceil(items.length / cols); }
+  if (S.layout === 'row') { cols = items.length || 1; rows = 1; }
+  const colGap = gap * 1.6;
+  const W = pad * 2 + cols * cellW + (cols - 1) * colGap;
+  const H = pad * 2 + titleH + rows * cellH + Math.max(0, rows - 1) * gap;
+  const titleW = S.title.trim() ? ctx.measureText(S.title).width + pad * 2 : 0;
+  return { items, fs, is, gap, pad, iconGap, cellH, cellW, colGap, cols, rows,
+           titleH, titleF, W: Math.max(W, titleW), H };
+}
+
+/* progress of one item at time t: 0 before it starts, 1 fully shown */
+function alphaAt(t, i, n) {
+  const start = S.d0 + i * S.stag;
+  const lastIn = S.d0 + (n - 1) * S.stag + S.din;
+  const outAt = lastIn + S.hold;
+  if (t < start) return 0;
+  if (t < start + S.din) return (t - start) / S.din;
+  if (S.dout <= 0) return t < outAt ? 1 : 0;
+  if (t < outAt) return 1;
+  if (t < outAt + S.dout) return 1 - (t - outAt) / S.dout;
+  return 0;
+}
+const totalTime = () => S.d0 + Math.max(0, visible().length - 1) * S.stag + S.din + S.hold + S.dout;
+const ease = k => k * k * (3 - 2 * k);
+
+function draw(sc, t) {
+  const m = measure(sc);
+  const W = Math.ceil(m.W), H = Math.ceil(m.H);
+  if (canvas.width !== W || canvas.height !== H) {
+    canvas.width = W; canvas.height = H;
+    canvas.style.width = Math.round(W / sc) + 'px';
+  }
+  ctx.clearRect(0, 0, W, H);
+
+  // card-wide alpha so the backdrop fades with its contents
+  const n = m.items.length;
+  let cardA = 0;
+  for (let i = 0; i < n; i++) cardA = Math.max(cardA, alphaAt(t, i, n));
+  if (t === null) cardA = 1;
+
+  if (S.back !== 'none' && cardA > 0) {
+    ctx.save();
+    ctx.globalAlpha = cardA;
+    const r = S.rad * sc;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(0, 0, W, H, r);
+    else ctx.rect(0, 0, W, H);
+    ctx.fillStyle = S.back === 'solid' ? S.backcol : hexA(S.backcol, S.backa);
+    ctx.fill();
+    if (S.back === 'panel') {
+      ctx.strokeStyle = 'rgba(255,255,255,.13)';
+      ctx.lineWidth = Math.max(1, sc);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  let y = m.pad;
+  if (m.titleH) {
+    ctx.save();
+    ctx.globalAlpha = cardA;
+    ctx.font = `700 ${m.titleF}px ${S.font}`;
+    ctx.fillStyle = S.fg;
+    ctx.textBaseline = 'top';
+    ctx.fillText(S.title, m.pad, y);
+    ctx.restore();
+    y += m.titleH;
+  }
+
+  m.items.forEach((it, i) => {
+    const raw = t === null ? 1 : alphaAt(t, i, n);
+    if (raw <= 0.001) return;
+    const a = ease(Math.min(1, raw));
+    const col = i % m.cols, row = Math.floor(i / m.cols);
+    let x = m.pad + col * (m.cellW + m.colGap);
+    let yy = y + row * (m.cellH + m.gap);
+
+    // entrances move the row, so they are applied as an offset here rather
+    // than by transforming the whole canvas
+    let dx = 0, dy = 0, scl = 1;
+    if (S.anim === 'up')    dy = (1 - a) * m.cellH * 0.7;
+    if (S.anim === 'left')  dx = -(1 - a) * m.cellW * 0.35;
+    if (S.anim === 'scale') scl = 0.82 + 0.18 * a;
+
+    ctx.save();
+    const ccx = x + m.is / 2, ccy = yy + m.cellH / 2;
+    if (scl !== 1) { ctx.translate(ccx, ccy); ctx.scale(scl, scl); ctx.translate(-ccx, -ccy); }
+    drawMarker(ctx, it, ccx + dx, ccy + dy, m.is, S.glow, a, S.marker);
+
+    ctx.globalAlpha = a;
+    ctx.fillStyle = S.fg;
+    const tx = x + m.is + m.iconGap + dx;
+    const sub = subFor(it);
+    if (sub) {
+      ctx.textBaseline = 'alphabetic';
+      ctx.font = `${S.bold ? 600 : 400} ${m.fs}px ${S.font}`;
+      ctx.fillText(it.name || '', tx, ccy + dy - m.fs * 0.08);
+      ctx.globalAlpha = a * 0.62;
+      ctx.font = `400 ${m.fs * 0.62}px ${S.font}`;
+      ctx.fillText(sub, tx, ccy + dy + m.fs * 0.78);
+    } else {
+      ctx.textBaseline = 'middle';
+      ctx.font = `${S.bold ? 600 : 400} ${m.fs}px ${S.font}`;
+      ctx.fillText(it.name || '', tx, ccy + dy + m.fs * 0.03);
+    }
+    ctx.restore();
+  });
+  return { W, H };
+}
+
+/* ============================================================
+   ANIMATION
+   ============================================================ */
+let playing = false, t0 = 0;
+const isBare = () => document.documentElement.classList.contains('bare');
+function tick(now) {
+  if (!playing) return;
+  const t = (now - t0) / 1000;
+  draw(1, t);
+  if (t > totalTime() + 0.2) {
+    playing = false;
+    // In the editor, settle back to the finished card so you can carry on
+    // working on it. In bare mode the whole point is that it has gone, so
+    // hold the faded-out state instead of snapping back to full.
+    draw(1, isBare() ? totalTime() + 1 : null);
+    return;
+  }
+  requestAnimationFrame(tick);
+}
+function play() {
+  playing = true;
+  t0 = performance.now();
+  requestAnimationFrame(tick);
+}
+
+/* ============================================================
+   EDITOR
+   ============================================================ */
+const SHAPE_OPTS = SHAPES.map(s => `<option value="${s[0]}">${s[1]}</option>`).join('');
+const GLYPH_OPTS = GLYPHS.map(g => `<option value="${g[0]}">${g[1]}</option>`).join('');
+let dragIdx = -1;
+
+function buildRows() {
+  rowsEl.innerHTML = '';
+  S.items.forEach((it, i) => {
+    const d = document.createElement('div');
+    d.className = 'row';
+    d.draggable = true;
+    d.innerHTML =
+      `<span class="drag" title="Drag to reorder">⠿</span>` +
+      `<input type="text" value="${String(it.name||'').replace(/"/g,'&quot;')}" placeholder="Instrument">` +
+      `<input type="color" value="${it.color}" title="Colour" style="height:24px">` +
+      `<button class="mini${it.on===false?' off':''}" title="Show or hide in the card">${it.on===false?'○':'●'}</button>` +
+      `<button class="mini" title="Remove">×</button>` +
+      `<select class="shp pathsel">${SHAPE_OPTS}</select>` +
+      `<select class="shp glyphsel">${GLYPH_OPTS}</select>`;
+    const [nameI, colI] = d.querySelectorAll('input');
+    const [onB, delB] = d.querySelectorAll('button.mini');
+    const sel = d.querySelector('select.pathsel');
+    const gsel = d.querySelector('select.glyphsel');
+    sel.value = it.shape;
+    gsel.value = it.glyph || 'circle';
+    // only the select that matches the current marker mode is on screen;
+    // a colour box or dot needs neither
+    sel.style.display  = S.marker === 'path'  ? '' : 'none';
+    gsel.style.display = S.marker === 'glyph' ? '' : 'none';
+    gsel.addEventListener('change', () => { it.glyph = gsel.value; refresh(false); });
+
+    nameI.addEventListener('input', () => { it.name = nameI.value; refresh(false); });
+    colI.addEventListener('input', () => { it.color = colI.value; refresh(false); });
+    sel.addEventListener('change', () => {
+      it.shape = sel.value;
+      // a shape carries a signature colour on stage; offer it, but never
+      // overwrite a colour that was deliberately chosen
+      if (!it.touched) { it.color = SHAPE_COL[sel.value]; colI.value = it.color; }
+      refresh(false);
+    });
+    colI.addEventListener('change', () => { it.touched = true; refresh(); });
+    onB.addEventListener('click', () => { it.on = it.on === false; refresh(); });
+    delB.addEventListener('click', () => { S.items.splice(i, 1); refresh(); });
+
+    d.addEventListener('dragstart', e => { dragIdx = i; d.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move'; });
+    d.addEventListener('dragend', () => { d.classList.remove('dragging');
+      rowsEl.querySelectorAll('.row').forEach(r => r.classList.remove('over')); });
+    d.addEventListener('dragover', e => { e.preventDefault(); d.classList.add('over'); });
+    d.addEventListener('dragleave', () => d.classList.remove('over'));
+    d.addEventListener('drop', e => {
+      e.preventDefault();
+      if (dragIdx < 0 || dragIdx === i) return;
+      const [moved] = S.items.splice(dragIdx, 1);
+      S.items.splice(i, 0, moved);
+      dragIdx = -1; refresh();
+    });
+    rowsEl.appendChild(d);
+  });
+}
+
+function refresh(rebuild = true) {
+  if (rebuild) buildRows();
+  document.getElementById('total').textContent =
+    `Full sequence runs ${totalTime().toFixed(1)}s — ${S.d0}s wait, ${S.din}s in, ${S.hold}s hold, ${S.dout}s out.`;
+  if (!playing) draw(1, null);
+  if (typeof seqEstimate === 'function') seqEstimate();
+  save();
+}
+
+/* ---------- control binding ---------- */
+const NUM = ['fs','is','gap','pad','rad','glow','backa','stag','d0','din','hold','dout','scale'];
+const TXT = ['title','layout','fg','back','backcol','font','anim','marker'];
+const CHK = ['bold','showshape'];
+NUM.forEach(k => {
+  const el = document.getElementById(k), ro = document.getElementById('ro-' + k);
+  el.value = S[k];
+  const apply = () => { S[k] = parseFloat(el.value); if (ro) ro.textContent = el.value; refresh(false); };
+  el.addEventListener('input', apply); apply();
+});
+TXT.forEach(k => {
+  const el = document.getElementById(k);
+  el.value = S[k];
+  // the marker mode decides which per-row select is visible, so that one
+  // has to rebuild the rows rather than just redraw the card
+  const full = k === 'marker';
+  el.addEventListener('input', () => { S[k] = el.value; refresh(full); });
+  el.addEventListener('change', () => { S[k] = el.value; refresh(full); });
+});
+CHK.forEach(k => {
+  const el = document.getElementById(k);
+  el.checked = !!S[k];
+  el.addEventListener('change', () => { S[k] = el.checked; refresh(false); });
+});
+
+document.getElementById('add').addEventListener('click', () => {
+  const s = SHAPES[S.items.length % SHAPES.length];
+  S.items.push({ name: 'Instrument ' + (S.items.length + 1), shape: s[0],
+                 glyph: GLYPHS[S.items.length % GLYPHS.length][0], color: s[2], on: true });
+  refresh();
+});
+
+/* ---------- import a visualizer preset ---------- */
+document.getElementById('import').addEventListener('click', () => document.getElementById('file').click());
+document.getElementById('file').addEventListener('change', e => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => {
+    try {
+      const cfg = JSON.parse(ev.target.result);
+      if (!cfg.shapes) throw new Error('not a preset');
+      // walk the routing the same way the visualizer's own legend does:
+      // every lane that names a track contributes its colour and its shape
+      const byTrack = new Map();
+      for (const [sid, sc] of Object.entries(cfg.shapes)) {
+        if (!sc || !Array.isArray(sc.lanes)) continue;
+        sc.lanes.forEach(l => {
+          const t = (l.track === 'shared') ? sc.track : l.track;
+          if (!t || t === 'none') return;
+          if (byTrack.has(String(t))) return;
+          // a lane can override the path's note shape; 'shared' means follow it
+          const g = (l.noteShape && l.noteShape !== 'shared') ? l.noteShape : sc.noteShape;
+          byTrack.set(String(t), { shape: sid, glyph: GLYPH_NAME[g] ? g : 'circle',
+                                   color: l.color || SHAPE_COL[sid] });
+        });
+      }
+      if (!byTrack.size) throw new Error('no routed tracks in that preset');
+      const order = Array.isArray(cfg.legendOrder) && cfg.legendOrder.length
+        ? cfg.legendOrder.filter(i => byTrack.has(String(i)))
+        : [];
+      const rest = [...byTrack.keys()].filter(k => !order.includes(k)).sort((a,b) => (+a)-(+b));
+      const hidden = cfg.legendHidden || {};
+      S.items = [...order, ...rest].map(k => ({
+        name: (cfg.legendLabels && cfg.legendLabels[k]) || ('Track ' + k),
+        shape: byTrack.get(k).shape,
+        glyph: byTrack.get(k).glyph,
+        color: byTrack.get(k).color,
+        on: !hidden[k],
+        touched: true
+      }));
+      refresh();
+      showErr(`Imported ${S.items.length} parts — rename them if they came in as "Track n".`);
+    } catch (err) { showErr('Could not read that preset: ' + err.message); }
+  };
+  r.readAsText(f);
+});
+
+/* ---------- layout save / load ---------- */
+document.getElementById('save').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'legend-layout.json';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+document.getElementById('load').addEventListener('click', () => document.getElementById('lfile').click());
+document.getElementById('lfile').addEventListener('change', e => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => {
+    try {
+      S = Object.assign(defaults(), JSON.parse(ev.target.result));
+      NUM.forEach(k => { const el = document.getElementById(k); el.value = S[k];
+        const ro = document.getElementById('ro-'+k); if (ro) ro.textContent = S[k]; });
+      TXT.forEach(k => { document.getElementById(k).value = S[k]; });
+      CHK.forEach(k => { document.getElementById(k).checked = !!S[k]; });
+      refresh();
+    } catch (err) { showErr('Bad layout file.'); }
+  };
+  r.readAsText(f);
+});
+
+/* ---------- PNG ---------- */
+document.getElementById('png').addEventListener('click', () => {
+  const sc = Math.max(1, Math.round(S.scale));
+  playing = false;
+  draw(sc, null);                     // always the fully-arrived state
+  canvas.toBlob(b => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(b);
+    a.download = 'legend.png';
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); draw(1, null); }, 1000);
+  }, 'image/png');
+});
+
+/* ============================================================
+   PNG SEQUENCE  (the only way out of a browser with real alpha)
+
+   MediaRecorder cannot encode an alpha channel — a WebM captured from this
+   canvas would arrive in Premiere with a black box behind it. So the frames
+   go out as PNGs, which carry alpha properly, bundled into one stored (not
+   deflated) zip. PNG data is already compressed, so storing costs nothing
+   and keeps the writer to a CRC table and three record layouts.
+   ============================================================ */
+const CRC_T = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(u8) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < u8.length; i++) c = CRC_T[(c ^ u8[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function zipStore(files) {          // [{name, data:Uint8Array}]
+  const enc = new TextEncoder();
+  const parts = [], central = [];
+  let off = 0;
+  for (const f of files) {
+    const nm = enc.encode(f.name), crc = crc32(f.data), n = f.data.length;
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true);
+    lh.setUint16(6, 0, true); lh.setUint16(8, 0, true);
+    lh.setUint16(10, 0, true); lh.setUint16(12, 0, true);
+    lh.setUint32(14, crc, true); lh.setUint32(18, n, true); lh.setUint32(22, n, true);
+    lh.setUint16(26, nm.length, true); lh.setUint16(28, 0, true);
+    parts.push(new Uint8Array(lh.buffer), nm, f.data);
+
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true);
+    ch.setUint16(8, 0, true); ch.setUint16(10, 0, true);
+    ch.setUint16(12, 0, true); ch.setUint16(14, 0, true);
+    ch.setUint32(16, crc, true); ch.setUint32(20, n, true); ch.setUint32(24, n, true);
+    ch.setUint16(28, nm.length, true); ch.setUint16(30, 0, true); ch.setUint16(32, 0, true);
+    ch.setUint16(34, 0, true); ch.setUint16(36, 0, true); ch.setUint32(38, 0, true);
+    ch.setUint32(42, off, true);
+    central.push(new Uint8Array(ch.buffer), nm);
+    off += 30 + nm.length + n;
+  }
+  const cdSize = central.reduce((a, b) => a + b.length, 0);
+  const eo = new DataView(new ArrayBuffer(22));
+  eo.setUint32(0, 0x06054b50, true);
+  eo.setUint16(4, 0, true); eo.setUint16(6, 0, true);
+  eo.setUint16(8, files.length, true); eo.setUint16(10, files.length, true);
+  eo.setUint32(12, cdSize, true); eo.setUint32(16, off, true); eo.setUint16(20, 0, true);
+  return new Blob([...parts, ...central, new Uint8Array(eo.buffer)], { type: 'application/zip' });
+}
+
+let exporting = false;
+/* Called from refresh(), which also runs while the controls are still being
+   bound — so every node is looked up here rather than captured in a const
+   that would not exist yet. */
+function seqEstimate() {
+  const info = document.getElementById('seqinfo'), fpsEl = document.getElementById('fps');
+  if (!info || !fpsEl) return;
+  const fps = parseFloat(fpsEl.value) || 30;
+  const n = Math.round(totalTime() * fps) + 1;
+  const m = measure(Math.max(1, Math.round(S.scale)));
+  info.textContent = `${n} frames at ${Math.ceil(m.W)}×${Math.ceil(m.H)} — ${totalTime().toFixed(1)}s`;
+}
+const seqBtn = document.getElementById('seq');
+const seqInfo = document.getElementById('seqinfo');
+seqBtn.addEventListener('click', async () => {
+  if (exporting) return;
+  exporting = true; playing = false;
+  seqBtn.disabled = true;
+  const fps = parseFloat(document.getElementById('fps').value) || 30;
+  const sc = Math.max(1, Math.round(S.scale));
+  const total = totalTime();
+  const n = Math.round(total * fps) + 1;
+  const files = [];
+  try {
+    for (let i = 0; i < n; i++) {
+      draw(sc, i / fps);
+      const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+      files.push({ name: `legend_${String(i).padStart(4, '0')}.png`,
+                   data: new Uint8Array(await blob.arrayBuffer()) });
+      if (i % 5 === 0) {
+        seqInfo.textContent = `Rendering ${i + 1} / ${n}…`;
+        await new Promise(r => setTimeout(r, 0));   // let the page breathe
+      }
+    }
+    seqInfo.textContent = 'Zipping…';
+    const zip = zipStore(files);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(zip);
+    a.download = 'legend-frames.zip';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    seqInfo.textContent = `Done — ${n} frames, ${(zip.size / 1048576).toFixed(1)} MB.`;
+  } catch (err) {
+    seqInfo.textContent = 'Export failed: ' + err.message;
+  } finally {
+    exporting = false; seqBtn.disabled = false;
+    draw(1, null);
+  }
+});
+document.getElementById('fps').addEventListener('change', seqEstimate);
+
+document.getElementById('obs').addEventListener('click', async () => {
+  const url = location.href.split('?')[0] + '?bare=1&play=1';
+  try { await navigator.clipboard.writeText(url); showErr('Copied — paste into an OBS Browser source URL.'); }
+  catch (e) { showErr(url); }
+});
+
+const checker = document.getElementById('checker');
+document.getElementById('chk').addEventListener('click', e => {
+  checker.classList.toggle('plain');
+  e.target.textContent = checker.classList.contains('plain') ? 'Show checkerboard' : 'Hide checkerboard';
+});
+document.getElementById('play').addEventListener('click', play);
+
+window.addEventListener('keydown', e => {
+  if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+  if (e.key === 'b' || e.key === 'B') document.documentElement.classList.toggle('bare');
+  if (e.code === 'Space') { e.preventDefault(); play(); }
+});
+
+/* Bare mode for an OBS browser source: ?bare=1 strips the page to the card
+   alone, ?play=1 runs the intro once as soon as it loads. */
+const q = new URLSearchParams(location.search);
+if (q.get('bare')) document.documentElement.classList.add('bare');
+refresh();
+if (q.get('play')) play();
+</script>
+</body>
+</html>

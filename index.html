@@ -61,6 +61,15 @@
   .swatch::-webkit-color-swatch { border:none; border-radius:2px; }
   .swatch::-moz-color-swatch { border:none; border-radius:2px; }
   .lane-row { display:grid; grid-template-columns:14px 18px 18px 1fr 1fr; gap:6px; align-items:center; margin-bottom:5px; }
+  .scene-row { display:grid; grid-template-columns:52px 1fr 44px 22px 22px 22px; gap:4px; align-items:center;
+    margin-bottom:4px; padding:3px 4px; border-radius:4px; background:rgba(255,255,255,.04); }
+  .scene-row.live { background:rgba(251,191,36,.16); box-shadow:inset 0 0 0 1px rgba(251,191,36,.4); }
+  .scene-row input { font-size:10px; padding:2px 3px; background:rgba(0,0,0,.35); border:1px solid #3a3f4a;
+    border-radius:3px; color:#ddd; width:100%; font-family:ui-monospace,monospace; }
+  .scene-row input.lbl-in { font-family:inherit; }
+  .scene-mini { background:rgba(255,255,255,.08); border:1px solid #444; color:#bbb; border-radius:3px;
+    font-size:10px; line-height:1; padding:3px 0; cursor:pointer; font-family:ui-monospace,monospace; }
+  .scene-mini:hover { background:rgba(255,255,255,.18); color:#fff; }
   .lane-group-label { font-size:10px; font-weight:700; letter-spacing:.05em; color:#8b96a8; text-transform:uppercase;
     margin:8px 0 4px; padding-top:6px; border-top:1px solid #2a2f3a; }
   .lane-group-label:first-child { margin-top:0; padding-top:0; border-top:none; }
@@ -70,6 +79,19 @@
     font-family:monospace; line-height:1; }
   .path-tab:hover { background:rgba(255,255,255,.14); color:#fff; }
   .path-tab-active { border-color:#00ffaa; color:#fff; background:rgba(0,255,170,.14); }
+  #live-strip { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:8px; }
+  .live-chip { display:inline-flex; align-items:center; gap:5px; cursor:pointer;
+    background:rgba(255,210,77,.10); border:1px solid rgba(255,210,77,.45); border-radius:5px;
+    padding:3px 7px; font-size:10px; color:#e8e8ee; font-family:inherit; max-width:100%; }
+  .live-chip:hover { background:rgba(255,210,77,.22); border-color:#ffd24d; }
+  .live-chip.is-active { border-color:#00ffaa; }
+  .live-dot { width:8px; height:8px; border-radius:50%; flex:0 0 8px; display:inline-block; }
+  .live-shape { font-weight:600; white-space:nowrap; }
+  .live-inst { color:#9aa4b4; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .live-sub { font-size:9px; color:#f59e0b; white-space:nowrap; }
+  .live-empty { font-size:10px; color:#6b7280; line-height:1.5; }
+  .live-off { font-size:10px; color:#6b7280; line-height:1.5; width:100%; }
+  .live-off b { color:#8b96a8; font-weight:600; }
   .path-tab.has-instrument { box-shadow:0 0 0 1px #ffd24d; }
   .path-tab.has-instrument.path-tab-active { box-shadow:0 0 0 1px #ffd24d; border-color:#00ffaa; }
   .tab-hide-btn { background:rgba(255,255,255,.06); border:1px solid #444; border-left:none; border-radius:0 6px 6px 0;
@@ -219,8 +241,8 @@
             react to the mix — the rest of the stage stays put.
           </div>
         </div>
-        <div class="mt-2"><span class="lbl">GAIN <span class="text-gray-300 font-mono" id="ro-audiogain">10</span></span>
-          <input type="range" id="g-audiogain" data-readout="ro-audiogain" min="0" max="50" step="1" value="10"
+        <div class="mt-2"><span class="lbl">GAIN <span class="text-gray-300 font-mono" id="ro-audiogain">12</span></span>
+          <input type="range" id="g-audiogain" data-readout="ro-audiogain" min="0" max="50" step="1" value="12"
             title="Scales the raw RMS value before it multiplies into ENERGY — raise this if your JSON's energy values are small and the stage barely reacts."></div>
         <div class="text-[10px] text-gray-500 mt-1">Live effective energy: <span class="font-mono text-fuchsia-300" id="ro-liveenergy">1.00</span></div>
       </div>
@@ -231,6 +253,8 @@
           <span class="text-xs text-cyan-400 font-mono toggle-icon">[-]</span>
         </div>
         <div id="routing-body">
+          <span class="lbl text-amber-300">ON SCREEN NOW</span>
+          <div id="live-strip"></div>
           <span class="lbl">PATH EDITOR</span>
           <div id="path-tabs" class="flex flex-wrap gap-1.5 mb-2"></div>
           <label class="flex items-center gap-2 text-xs text-gray-300 cursor-pointer mb-1">
@@ -282,17 +306,17 @@
         <div id="global-body" class="collapsed">
           <div class="grid grid-cols-2 gap-3 mt-2">
             <div><span class="lbl">BLUEPRINT</span>
-              <select id="g-bp"><option value="1">Visible</option><option value="0">Hidden</option></select></div>
+              <select id="g-bp"><option value="1">Visible</option><option value="0" selected>Hidden</option></select></div>
             <div><span class="lbl text-cyan-400">TRAIL LENGTH</span>
-              <input type="range" id="g-trail" data-snap-mid="0" min="0" max="1" step="0.01" value="0.55"></div>
+              <input type="range" id="g-trail" data-snap-mid="0" min="0" max="1" step="0.01" value="0"></div>
             <div><span class="lbl">NOTE LENGTH</span>
-              <input type="number" id="g-len" value="2" step="0.25" min="0.25" max="6"></div>
+              <input type="number" id="g-len" value="3.75" step="0.25" min="0.25" max="6"></div>
             <div><span class="lbl">NOTE THICKNESS</span>
-              <input type="number" id="g-thick" value="2" step="0.25" min="0.25" max="8"></div>
+              <input type="number" id="g-thick" value="0.5" step="0.25" min="0.25" max="8"></div>
             <div><span class="lbl text-cyan-400">VELOCITY &rarr; SIZE</span>
               <input type="range" id="g-vel" data-snap-mid="0.5" min="0" max="1" step="0.01" value="0.5"></div>
             <div><span class="lbl text-cyan-400">GLOW</span>
-              <input type="range" id="g-glow" data-snap-mid="1" min="0" max="2" step="0.05" value="1"></div>
+              <input type="range" id="g-glow" data-snap-mid="1" min="0" max="2" step="0.05" value="0.45"></div>
             <div><span class="lbl text-amber-400">RENDER SCALE</span>
               <input type="range" id="g-rscale" data-snap-mid="1" min="0.5" max="1" step="0.05" value="1"
                 title="Lower = fewer pixels to push. Biggest single perf lever."></div>
@@ -366,6 +390,22 @@
             <div class="col-span-2" data-bgmode="image"><span class="lbl text-sky-300">BLUR <span class="text-gray-300 font-mono" id="ro-bgblur">0</span></span>
               <input type="range" id="bg-blur" data-readout="ro-bgblur" min="0" max="40" step="1" value="0"></div>
 
+            <div class="col-span-2" style="border-top:1px solid #2a2f3a;padding-top:8px;margin-top:4px;">
+              <span class="lbl text-amber-300">NOTE HALO <span class="text-gray-300 font-mono" id="ro-haloamt">0</span></span>
+              <input type="range" id="halo-amt" data-readout="ro-haloamt" min="0" max="1" step="0.05" value="0"
+                title="Darkens the picture only right behind the notes, instead of dimming all of it.">
+            </div>
+            <div class="col-span-2"><span class="lbl text-amber-300">HALO SIZE <span class="text-gray-300 font-mono" id="ro-halosize">8</span>px</span>
+              <input type="range" id="halo-size" data-readout="ro-halosize" min="1" max="40" step="1" value="8"></div>
+            <div class="text-[10px] text-gray-500 col-span-2 -mt-1 leading-snug">
+              The other way to keep notes readable. DARKEN pushes the whole picture back;
+              this carves a soft shadow that hugs the notes and leaves everything else alone,
+              so a painting still looks like a painting. It works off note coverage rather
+              than colour, so it holds up whatever the notes and the picture happen to be —
+              and it applies in every background mode, including transparent, where the shadow
+              travels with the notes into OBS.
+            </div>
+
             <div class="col-span-2" data-bgmode="chroma"><span class="lbl text-emerald-300">KEY COLOUR</span>
               <input type="color" id="bg-chroma" value="#00b140"
                 style="width:100%;height:26px;padding:1px 2px;border-radius:4px;border:1px solid #555;background:transparent;cursor:pointer;">
@@ -417,6 +457,7 @@
           <div class="mt-3">
             <span class="lbl text-fuchsia-400">BACKING TRACK (real recording)</span>
             <input type="file" id="audio-upload" accept="audio/*" class="text-[10px] text-gray-400">
+            <select id="audio-select" class="text-[10px] mt-1" style="width:100%;"><option value="">audio/ — loading…</option></select>
             <div id="audio-file-status" class="text-[10px] text-gray-500 mt-1">No backing track — synth only.</div>
             <label class="flex items-center gap-2 text-xs text-gray-300 cursor-pointer mt-2">
               <input type="checkbox" id="mute-synth" checked> Mute synth while backing track is loaded
@@ -599,6 +640,54 @@
       </div>
 
       <div class="sect">
+        <div class="sect-hd" data-toggle="scene-body">
+          <span class="text-sm font-semibold text-white">Scene Timeline</span>
+          <span class="text-xs text-cyan-400 font-mono toggle-icon">[+]</span>
+        </div>
+        <div id="scene-body" class="collapsed">
+          <label class="flex items-center gap-2 text-xs cursor-pointer mt-2">
+            <input type="checkbox" id="scene-on">
+            <span class="text-amber-300 font-semibold">RUN TIMELINE</span>
+          </label>
+          <div class="text-[10px] text-gray-500 mt-1 leading-snug">
+            A scene is the whole look &mdash; every colour, routing and slider &mdash; pinned to a
+            timestamp. While the timeline runs, the playhead drives the panel instead of the other
+            way round, so turn it off to go back to editing by hand. Scrubbing anywhere lands in the
+            right look: nothing is remembered between frames, it is all worked out from the clock.
+          </div>
+          <div class="grid grid-cols-2 gap-2 mt-3">
+            <button type="button" class="btn-sm" id="scene-add">+ Scene here</button>
+            <button type="button" class="btn-sm" id="scene-clear">Clear all</button>
+            <button type="button" class="btn-sm" id="scene-save">Save show</button>
+            <button type="button" class="btn-sm" id="scene-import">Load show</button>
+          </div>
+          <input type="file" id="scene-file" accept=".json" class="collapsed">
+          <div class="mt-3"><span class="lbl text-amber-300">ADD A SCENE FROM A SAVED PRESET</span>
+            <select id="scene-preset-select" class="text-[10px]" style="width:100%;">
+              <option value="">presets/ &mdash; choose a file&hellip;</option>
+            </select>
+            <div class="text-[10px] text-gray-500 mt-1 leading-snug">
+              Unlike the Presets dropdown further down, this does not change what is on screen &mdash;
+              it drops the preset in as a scene at the playhead.
+            </div>
+          </div>
+          <div class="text-[10px] text-gray-500 mt-2" style="display:grid;grid-template-columns:52px 1fr 44px 22px 22px 22px;gap:4px;padding:0 4px;">
+            <span>TIME</span><span>NAME</span><span>FADE</span><span></span><span></span><span></span>
+          </div>
+          <div id="scene-list" class="mt-1"></div>
+          <div id="scene-now" class="text-[10px] font-mono text-amber-300/70 mt-2"></div>
+          <div class="text-[10px] text-gray-500 mt-2 leading-snug">
+            <span class="text-cyan-400 font-mono">&rarr;</span> parks the playhead on that scene.
+            <span class="text-cyan-400 font-mono">&#8635;</span> re-captures it from the panel as it
+            looks right now &mdash; the way to edit a scene is to turn the timeline off, dial the look
+            in, then hit it. <span class="text-cyan-400 font-mono">&times;</span> deletes.
+            FADE is how many seconds the look takes to morph in; 0 is a hard cut.
+            Volume, visual offset and frame size are deliberately left alone by scenes.
+          </div>
+        </div>
+      </div>
+
+      <div class="sect">
         <div class="sect-hd" data-toggle="capture-body">
           <span class="text-sm font-semibold text-white">Capture &amp; Session</span>
           <span class="text-xs text-cyan-400 font-mono toggle-icon">[+]</span>
@@ -689,6 +778,13 @@
             <button class="btn-sm" id="p-import">Import</button>
             <button class="btn-sm" id="p-reset">Reset</button>
             <button class="btn-sm btn-rec" id="p-record">● Record</button>
+          </div>
+          <button type="button" class="btn-sm mt-2" id="p-factory" style="width:100%;">Original defaults</button>
+          <div class="text-[10px] text-gray-500 mt-1 leading-snug">
+            <span class="text-cyan-400">Reset</span> clears to the look every one of your presets
+            settles on &mdash; no trail, thin notes, low glow, blueprint off.
+            <span class="text-cyan-400">Original defaults</span> is the app's first-ever look instead:
+            fat bright notes, trails on, blueprint showing.
           </div>
           <select id="preset-select" class="text-[10px] mt-2" style="width:100%;"><option value="">presets/ — loading…</option></select>
           <input type="file" id="p-file" accept=".json" class="collapsed">
@@ -932,12 +1028,23 @@ const SHAPES = [
     mirrors: ['none'],
     fill: 0.19, radius: 70, turns: 4,   // baseX as a fraction of stage width, so it moves inward
                                          // toward center without touching the ladder or red lines
+    // The same TWIST SPEED the DNA helix has: winding the whole column as the
+    // song plays, so the staircase turns instead of standing still. Defaults
+    // to 0 (stationary, exactly as before) rather than the helix's 1.8, because
+    // presets saved before this existed backfill the default — a non-zero one
+    // would set every old preset's staircase spinning unasked.
+    twistSpeed: 0,
     place(t, li, g) {
       const baseX = g.W * this.fill;
       const isRight = li >= 2, reverse = (li === 1 || li === 3);
+      const scfg = cfg.shapes['stairSpiral'];
+      const twist = currentPlaybackTime *
+        ((scfg && scfg.twistSpeed != null) ? scfg.twistSpeed : this.twistSpeed);
       return param(tt => {
         const u = reverse ? 1 - tt : tt;
-        const th = u * this.turns * TAU;
+        // twist is added to the angle, not to u, so the column winds in place
+        // and the notes keep their pitch->height mapping exactly as before
+        const th = u * this.turns * TAU + twist;
         const x = baseX + this.radius * Math.sin(th);
         return { x: isRight ? g.W - x : x, y: u * g.H };
       }, t);
@@ -1317,11 +1424,18 @@ function placeAt(shape, t, li, g, sc) {
    CONFIG  (single source of truth; the render loop reads this,
    never the DOM)
    ============================================================ */
-function defaultConfig() {
-  const c = { bp: true, trail: 0.55, len: 2, thick: 2, vel: 0.5, glow: 1, vol: -12,
+/* The values this app originally shipped with. Every settled preset in
+   presets/ overrides the same five of them by the same amounts — fat, bright,
+   trail-smeared notes over a blueprint grid are nobody's finished look — so
+   the defaults below are the house ones and these are kept only for the
+   "Original defaults" button, for when you want to see where it started. */
+const FACTORY_LOOK = { bp: true, trail: 0.55, len: 2, thick: 2, glow: 1, audioEnergyGain: 10 };
+
+function defaultConfig(flavour) {
+  const c = { bp: false, trail: 0, len: 3.75, thick: 0.5, vel: 0.5, glow: 0.45, vol: -12,
               backingVol: 0, muteSynth: true, backingDelay: 0,
               frame: 'fill',
-              rscale: 1, wispcap: 900, offset: 0, maxHold: 0, preroll: 3, energy: 1, screenShake: 0, audioEnergyGain: 10, audioEnergyTargets: 'all',
+              rscale: 1, wispcap: 900, offset: 0, maxHold: 0, preroll: 3, energy: 1, screenShake: 0, audioEnergyGain: 12, audioEnergyTargets: 'all',
               eqOn: false, eqTrack: 'all', eqBands: 24, eqColor: '#00e5ff', eqBase: 24, eqSpread: 84,
               eqOffX: 0, eqOffY: 0, eqDistX: 1, eqDistY: 1, eqSize: 1,
               voiceOn: false, voiceTrack: 'all', voiceBands: 32, voiceColor: '#ff3366', voiceBase: 36, voiceSpread: 60,
@@ -1337,6 +1451,7 @@ function defaultConfig() {
               bgMode: 'color', bgColor: '#08080a',
               bgGrad1: '#05060d', bgGrad2: '#241a3a', bgGradAngle: 180, bgGradShape: 'linear',
               bgChroma: '#00b140', bgFit: 'cover', bgDim: 0, bgBlur: 0, bgChecker: false,
+              haloAmt: 0, haloSize: 8,
               shapes: {}, mutes: {} };
   SHAPES.forEach(s => {
     c.shapes[s.id] = {
@@ -1350,6 +1465,7 @@ function defaultConfig() {
       wispLife: 0.9, tailStyle: 'taper',
       revAmt: 0, revBass: true, bloomAmt: 0, bloomSustain: false, fireworkAmt: 0,
       noteShape: 'line', vibAmt: 0, vibRate: 5,
+      chordBoost: 0, chordLink: 0, chordWin: 80,
       petalAmt: 0, petalFall: 55,
       lanes: s.lanes.map((ln, i) => ({ on: true, track: 'shared', dir: 'forward', noteShape: 'shared', revAmt: 'shared',
         color: (s.laneColors && s.laneColors[i]) || s.glow, ink: s.ink }))
@@ -1365,6 +1481,7 @@ function defaultConfig() {
   if (c.shapes['parc']) c.shapes['parc'].straighten = 0;
   if (c.shapes['cloud']) c.shapes['cloud'].gather = 0;
   if (c.shapes['bolt']) c.shapes['bolt'].smoothCorners = false;
+  if (flavour === 'factory') Object.assign(c, FACTORY_LOOK);
   if (c.shapes['halfsun']) {
     c.shapes['halfsun'].cloudMask = false;
     c.shapes['halfsun'].mirrorRays = true;
@@ -1542,6 +1659,60 @@ void main() {
   outColor = texture(u_tex, uv);
 }`;
 
+/* ---------- note halo composite ----------
+   Why this exists: the note layer is blitted ADDITIVELY, and adding light to
+   an already-bright pixel does nothing. Over a dark stage that is invisible;
+   over a photograph or a painting the notes simply vanish into the bright
+   parts. Dimming the whole background fixes it by ruining the picture.
+
+   Instead, take the note layer's own alpha, widen it a few pixels, and use
+   that as a mask for how much BACKGROUND to remove — a soft dark edge that
+   hugs the notes and leaves the rest of the image completely untouched. The
+   cost is one extra pass' worth of texture taps in the blit that was already
+   happening, and it works whatever colour the notes or the picture are. */
+const HALO_FS = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_tex;
+uniform vec2  u_px;         // one texel, in uv units
+uniform float u_radius;     // how far the halo reaches, in texels
+uniform float u_strength;   // how much background a solid note removes
+uniform float u_keepA;      // 1 only for a transparent background (see main)
+out vec4 outColor;
+
+/* Twelve taps on two rings. The softness comes from the notes' own
+   antialiased edges; the rings only push that edge outwards. */
+float dilate(vec2 uv) {
+  vec2 r1 = u_px * u_radius, r2 = r1 * 0.5;
+  const float K = 0.7071068;
+  float m = texture(u_tex, uv).a;
+  m = max(m, texture(u_tex, uv + vec2( r1.x, 0.0)).a);
+  m = max(m, texture(u_tex, uv + vec2(-r1.x, 0.0)).a);
+  m = max(m, texture(u_tex, uv + vec2( 0.0,  r1.y)).a);
+  m = max(m, texture(u_tex, uv + vec2( 0.0, -r1.y)).a);
+  m = max(m, texture(u_tex, uv + vec2( r1.x * K,  r1.y * K)).a);
+  m = max(m, texture(u_tex, uv + vec2(-r1.x * K,  r1.y * K)).a);
+  m = max(m, texture(u_tex, uv + vec2( r1.x * K, -r1.y * K)).a);
+  m = max(m, texture(u_tex, uv + vec2(-r1.x * K, -r1.y * K)).a);
+  m = max(m, texture(u_tex, uv + vec2( r2.x,  r2.y)).a);
+  m = max(m, texture(u_tex, uv + vec2(-r2.x,  r2.y)).a);
+  m = max(m, texture(u_tex, uv + vec2( r2.x, -r2.y)).a);
+  m = max(m, texture(u_tex, uv + vec2(-r2.x, -r2.y)).a);
+  return m;
+}
+
+void main() {
+  vec4 c = texture(u_tex, v_uv);
+  float shade = clamp(dilate(v_uv) * u_strength, 0.0, 1.0);
+  // Scaling by strength (rather than always using the note's own coverage)
+  // is what makes this one continuous dial: at 0 nothing is removed and the
+  // blend degenerates to exactly the additive glow this has always been, and
+  // by 1 the notes are opaque paint with a hard shadow. u_keepA exists only
+  // for the transparent background, where dst is (0,0,0,0) so the alpha is
+  // all OBS gets — without it the notes would be exported see-through.
+  outColor = vec4(c.rgb, max(c.a * u_keepA, shade));
+}`;
+
 /* Fade pass must NOT sample a texture — it writes to the same target it
    would read, which is undefined behaviour (feedback loop). Solid quad. */
 const SOLID_VS = `#version 300 es
@@ -1554,7 +1725,13 @@ void main() { outColor = vec4(1.0); }`;
 
 const spriteProg = prog(SPRITE_VS, SPRITE_FS);
 const texProg    = prog(TEX_VS, TEX_FS);
+const haloProg   = prog(TEX_VS, HALO_FS);
 const solidProg  = prog(SOLID_VS, SOLID_FS);
+const UH_TEX = gl.getUniformLocation(haloProg, 'u_tex');
+const UH_PX  = gl.getUniformLocation(haloProg, 'u_px');
+const UH_RAD = gl.getUniformLocation(haloProg, 'u_radius');
+const UH_STR = gl.getUniformLocation(haloProg, 'u_strength');
+const UH_KA  = gl.getUniformLocation(haloProg, 'u_keepA');
 const U_RES  = gl.getUniformLocation(spriteProg, 'u_res');
 const U_TEX  = gl.getUniformLocation(texProg, 'u_tex');
 const U_FLIP = gl.getUniformLocation(texProg, 'u_flip');
@@ -1609,6 +1786,11 @@ function makeTarget() {
   return { tex, fb };
 }
 const trailRT = makeTarget();
+/* Particles and the bass/EQ visualisers are drawn straight to the screen
+   after the note layer has already been composited, so they would miss the
+   note halo entirely — and the wisps are exactly the thin, faint things that
+   need it most. They get collected here first when the halo is on. */
+const fxRT = makeTarget();
 const bpTex   = gl.createTexture();
 gl.bindTexture(gl.TEXTURE_2D, bpTex);
 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -1894,6 +2076,8 @@ function resize() {
   if (chk) { chk.style.width = W + 'px'; chk.style.height = H + 'px'; }
   bgDirty = true;
   gl.bindTexture(gl.TEXTURE_2D, trailRT.tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, pw, ph, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.bindTexture(gl.TEXTURE_2D, fxRT.tex);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, pw, ph, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
   geo.W = W; geo.H = H; geo.CX = CX; geo.CY = CY;
   geo.core = Math.min(W, H) * 0.2;
@@ -2290,7 +2474,10 @@ async function buildAudio() {
   disposeAudio();
   masterVol = new Tone.Volume(cfg.vol).toDestination();
   synthBus  = new Tone.Gain(1).connect(masterVol);
-  parsedMidi.tracks.forEach((tr, i) => {
+  // a backing track is allowed to exist with no MIDI behind it — loading the
+  // recording first used to throw here, and the caller's catch reported it as
+  // "could not decode that audio file", which it plainly had
+  ((parsedMidi && parsedMidi.tracks) || []).forEach((tr, i) => {
     const gain = new Tone.Gain(cfg.mutes[i] ? 0 : 1).connect(synthBus);
     const synth = new Tone.PolySynth(Tone.Synth, { maxPolyphony: 32 }).connect(gain);
     trackGains[i] = gain;
@@ -2780,6 +2967,25 @@ function buildShapeSections() {
         <div class="col-span-2"><span class="lbl text-lime-400">VIBRATO RATE</span>
           <input type="range" data-cfg="shape.${s.id}.vibRate" min="0.5" max="20" step="0.1" value="5"
             title="Swiggles per second"></div>
+
+        <div class="col-span-3 mt-1" style="border-top:1px solid #2a2f3a;padding-top:8px">
+          <span class="lbl text-amber-300">DOUBLE STOPS &amp; CHORDS &mdash; when this part plays more than one note at once</span>
+        </div>
+        <div class="col-span-2"><span class="lbl text-amber-300">CHORD SWELL <span class="text-gray-300 font-mono" id="ro-chordBoost-${s.id}">0</span></span>
+          <input type="range" data-cfg="shape.${s.id}.chordBoost" data-readout="ro-chordBoost-${s.id}" data-snap-mid="0" min="0" max="1.5" step="0.05" value="0"
+            title="Each extra note in a chord makes all of them bigger and brighter. A four-note chord at 0.5 draws at 2.5x."></div>
+        <div><span class="lbl text-amber-300">WINDOW <span class="text-gray-300 font-mono" id="ro-chordWin-${s.id}">80</span>ms</span>
+          <input type="range" data-cfg="shape.${s.id}.chordWin" data-readout="ro-chordWin-${s.id}" min="5" max="250" step="5" value="80"
+            title="How close two attacks must be to count as one chord. Widen it to catch a rolled chord the player spreads."></div>
+        <div class="col-span-3"><span class="lbl text-amber-300">CHORD LINK <span class="text-gray-300 font-mono" id="ro-chordLink-${s.id}">0</span></span>
+          <input type="range" data-cfg="shape.${s.id}.chordLink" data-readout="ro-chordLink-${s.id}" data-snap-mid="0" min="0" max="1" step="0.05" value="0"
+            title="Draws a line joining the notes of a chord, so a double stop reads as one gesture."></div>
+        <div class="text-[10px] text-gray-500 col-span-3 -mt-1 leading-snug">
+          Grouped by <span class="text-amber-300">attack</span>, not by overlap &mdash; a held bass note under a
+          moving line is polyphony but it is not a double stop, and counting it would leave these on
+          almost permanently. Chord tones arriving on separate MIDI tracks still group together as
+          long as those tracks are routed into this same path.
+        </div>
         <div class="col-span-2"><span class="lbl text-fuchsia-400">PATH REVERB <span class="text-gray-300 font-mono" id="ro-revAmt-${s.id}">0</span></span>
           <input type="range" data-cfg="shape.${s.id}.revAmt" data-readout="ro-revAmt-${s.id}" data-snap-mid="0" min="0" max="2" step="0.01" value="0"
             title="Decaying echoes back along this shape's path"></div>
@@ -2869,6 +3075,9 @@ function selectShape(id) {
   document.querySelectorAll('.path-tab').forEach(el => {
     el.classList.toggle('path-tab-active', el.dataset.selectShape === id);
   });
+  document.querySelectorAll('[data-live-shape]').forEach(el => {
+    el.classList.toggle('is-active', el.dataset.liveShape === id);
+  });
   invalidateBlueprint();
 }
 
@@ -2899,7 +3108,60 @@ function shapeHasTrack(sid) {
 /* Outlines a tab once its path has an instrument routed to it, so you can
    see at a glance which of the 14 paths are actually wired up. Called
    whenever any track dropdown changes, and after presets load. */
+/* What is actually drawing, as opposed to what is merely wired up.
+   shapeHasTrack() and usedTracksMap() both ignore a lane's ON box on
+   purpose — they answer "is this assigned", which is a different question
+   from "is this on screen", and the gap between the two is exactly what is
+   hard to read off the tab strip at a glance. */
+function liveRouting() {
+  const live = [], dark = [];
+  for (const s of SHAPES) {
+    const sc = cfg.shapes[s.id];
+    if (!sc) continue;
+    const on = [], off = [];
+    sc.lanes.forEach((l, li) => {
+      if (resolveTrack(s.id, li) < 0) return;         // no track, or a stale index
+      (l.on === false ? off : on).push({
+        li, t: resolveTrack(s.id, li), color: l.color || sc.glow || s.glow
+      });
+    });
+    if (on.length) live.push({ s, on, offCount: off.length });
+    else if (off.length) dark.push({ s, offCount: off.length });
+  }
+  return { live, dark };
+}
+
+function buildLiveStrip() {
+  const host = document.getElementById('live-strip');
+  if (!host) return;
+  if (!parsedMidi) { host.innerHTML = '<div class="live-empty">Load a MIDI file first.</div>'; return; }
+  const { live, dark } = liveRouting();
+  const darkNote = dark.length
+    ? `<div class="live-off">Routed but switched off: <b>${dark.map(d => escapeHtml(d.s.label)).join(', ')}</b></div>`
+    : '';
+  if (!live.length) {
+    host.innerHTML = '<div class="live-empty">Nothing is on screen — no path has a switched-on lane with a track.</div>' + darkNote;
+    return;
+  }
+  host.innerHTML = live.map(({ s, on, offCount }) => {
+    const names = [...new Set(on.map(l => legendLabel(String(l.t))))];
+    const dots = [...new Set(on.map(l => l.color))].slice(0, 4)
+      .map(c => `<i class="live-dot" style="background:${c}"></i>`).join('');
+    return `<button type="button" class="live-chip${s.id === activeShapeId ? ' is-active' : ''}" `
+      + `data-live-shape="${s.id}" title="Open this path's editor">`
+      + dots
+      + `<span class="live-shape">${escapeHtml(s.label)}</span>`
+      + `<span class="live-inst">${escapeHtml(names.join(', '))}</span>`
+      + (offCount ? `<span class="live-sub">${offCount} lane${offCount > 1 ? 's' : ''} off</span>` : '')
+      + `</button>`;
+  }).join('') + darkNote;
+  host.querySelectorAll('[data-live-shape]').forEach(b => {
+    b.addEventListener('click', () => { selectShape(b.dataset.liveShape); buildLiveStrip(); });
+  });
+}
+
 function refreshTabTrackHighlights() {
+  buildLiveStrip();
   document.querySelectorAll('.path-tab[data-select-shape]').forEach(btn => {
     btn.classList.toggle('has-instrument', shapeHasTrack(btn.dataset.selectShape));
   });
@@ -3289,6 +3551,7 @@ function applyControl(node) {
         key === 'offX' || key === 'offY' || key === 'distX' || key === 'distY' || key === 'twistSpeed' ||
         key === 'windDirA' || key === 'windDirB' || key === 'straighten' || key === 'gather' ||
         key === 'rayCount' || key === 'raySpan' ||
+        key === 'chordBoost' || key === 'chordLink' || key === 'chordWin' ||
         key === 'petalAmt' || key === 'petalFall') v = parseFloat(raw);
     cfg.shapes[sid][key] = v;
     // keep the live SHAPES object in sync so renderShapes() sees the new color
@@ -3334,7 +3597,11 @@ function applyControl(node) {
       });
     }
     if (key === 'color' || key === 'ink') invalidateBlueprint();
-    if (key === 'on') { invalidateBlueprint(); if (typeof refreshHideButtons === 'function') refreshHideButtons(); }
+    if (key === 'on') {
+      invalidateBlueprint();
+      if (typeof refreshHideButtons === 'function') refreshHideButtons();
+      if (typeof buildLiveStrip === 'function') buildLiveStrip();
+    }
   } else {
     const key = parts_[0];
     cfg[key] = (node.type === 'checkbox') ? raw
@@ -3554,7 +3821,8 @@ function writeConfigToDOM() {
    ['subwave-disty', 'subwaveDistY'], ['subwave-size', 'subwaveSize'], ['subwave-opacity', 'subwaveOpacity'],
    ['bg-mode', 'bgMode'], ['bg-color', 'bgColor'], ['bg-grad1', 'bgGrad1'], ['bg-grad2', 'bgGrad2'],
    ['bg-gradshape', 'bgGradShape'], ['bg-gradangle', 'bgGradAngle'], ['bg-chroma', 'bgChroma'],
-   ['bg-fit', 'bgFit'], ['bg-dim', 'bgDim'], ['bg-blur', 'bgBlur'], ['bg-checkerbox', 'bgChecker']]
+   ['bg-fit', 'bgFit'], ['bg-dim', 'bgDim'], ['bg-blur', 'bgBlur'], ['bg-checkerbox', 'bgChecker'],
+   ['halo-amt', 'haloAmt'], ['halo-size', 'haloSize']]
     .forEach(([id, key]) => {
       const el = document.getElementById(id);
       if (!el || cfg[key] === undefined) return;
@@ -3570,7 +3838,16 @@ function writeConfigToDOM() {
   if (typeof applyBackground === 'function') applyBackground();
   resetScanners();
 }
-function saveLocal() { try { localStorage.setItem('mam-preset', JSON.stringify(cfg)); } catch (e) {} }
+/* Declared here rather than down with the rest of the Scene Timeline so
+   saveLocal can see it: while the timeline is running cfg holds a computed
+   scene, not the look you authored, and persisting that would quietly
+   replace your saved look with whatever scene the playhead happened to be
+   sitting in. */
+let sceneOn = false;
+function saveLocal() {
+  if (sceneOn) return;
+  try { localStorage.setItem('mam-preset', JSON.stringify(cfg)); } catch (e) {}
+}
 
 /* Locked mode's shared pitch range — fitted to the actual notes in the
    loaded MIDI, with a couple semitones of headroom each side. */
@@ -3697,6 +3974,10 @@ document.getElementById('p-reset').addEventListener('click', () => {
   cfg = defaultConfig(); writeConfigToDOM(); saveLocal();
   if (trackMeta.length) populateTrackSelects();
 });
+document.getElementById('p-factory').addEventListener('click', () => {
+  cfg = defaultConfig('factory'); writeConfigToDOM(); saveLocal();
+  if (trackMeta.length) populateTrackSelects();
+});
 
 /* ------------------------------------------------------------
    RECORDING  (canvas video + Tone audio, real time)
@@ -3786,17 +4067,40 @@ document.getElementById('json-upload').addEventListener('change', (e) => {
 document.getElementById('json-clear').addEventListener('click', clearEnergyJson);
 
 const audioFileStatus = document.getElementById('audio-file-status');
-document.getElementById('audio-upload').addEventListener('change', async (e) => {
-  const file = e.target.files && e.target.files[0];
-  if (!file) return;
-  audioFileStatus.textContent = 'Decoding…';
+
+/* A recording is far bigger than the MIDI and the energy JSON put together,
+   so it is kept as the Blob itself rather than an ArrayBuffer (no second
+   copy in memory) and skipped past this ceiling — a gigabyte of WAV is not
+   worth the write on every load. */
+const BACKING_MAX_BYTES = 600 * 1024 * 1024;
+
+async function applyBackingFile(file, name, restored, srcUrl) {
+  audioFileStatus.textContent = restored ? 'Restoring backing track…' : 'Decoding…';
   try {
-    await Tone.start();
+    // Tone.start() needs a user gesture; on a restore there has not been one
+    // yet, and decoding works fine on a suspended context anyway
+    if (!restored) await Tone.start();
     if (backingURL) URL.revokeObjectURL(backingURL);
     backingURL = URL.createObjectURL(file);
     backingBuffer = await new Tone.ToneAudioBuffer().load(backingURL);
     backingLoaded = true;
-    audioFileStatus.textContent = `${file.name} — ${fmt(backingBuffer.duration)}`;
+    const mb = file.size / 1048576;
+    audioFileStatus.textContent = `${name} — ${fmt(backingBuffer.duration)}`;
+    if (!restored) {
+      // Picked from the audio/ folder? Remember just the path and re-fetch it
+      // next time — a few dozen bytes instead of a few hundred megabytes. Only
+      // a hand-picked file, which has no URL to go back to, is stored whole.
+      if (srcUrl) {
+        idb.set('backing', { name, url: srcUrl });
+        audioFileStatus.textContent += ' · remembered';
+      } else if (file.size > BACKING_MAX_BYTES) {
+        audioFileStatus.textContent += ` · ${mb.toFixed(0)} MB, too big to remember`;
+      } else {
+        idb.set('backing', { name, blob: file, size: file.size })
+           .then(() => { audioFileStatus.textContent += ` · remembered (${mb.toFixed(0)} MB)`; })
+           .catch(() => { audioFileStatus.textContent += ' · could not be remembered'; });
+      }
+    }
     // let the recording run past the MIDI's end if it's longer
     if (backingBuffer.duration > songDuration) {
       songDuration = backingBuffer.duration;
@@ -3812,10 +4116,28 @@ document.getElementById('audio-upload').addEventListener('change', async (e) => 
       backingStartAt(startAt, at);
     }
   } catch (err) {
-    backingLoaded = false;
-    audioFileStatus.textContent = 'Could not decode that audio file.';
+    // only blame the file if it never decoded; anything after that is ours
+    const decoded = backingLoaded && backingBuffer;
+    if (!decoded) backingLoaded = false;
+    audioFileStatus.textContent = decoded
+      ? `${name} loaded, but the audio engine did not rebuild: ${err.message}`
+      : (restored ? 'The remembered backing track could not be decoded — pick it again.'
+                  : 'Could not decode that audio file.');
+    if (restored && !decoded) idb.del('backing');
   }
+}
+
+document.getElementById('audio-upload').addEventListener('change', async (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  await applyBackingFile(file, file.name, false);
 });
+
+populateFolderSelect('audio-select', 'audio/',
+  ['.wav', '.mp3', '.m4a', '.ogg', '.flac', '.mp4', '.aac'], async (path, name) => {
+    const blob = await fetch(path).then(r => r.blob());
+    await applyBackingFile(blob, name, false, path);
+  });
 
 document.getElementById('mute-synth').addEventListener('change', (e) => {
   cfg.muteSynth = e.target.checked;
@@ -4640,6 +4962,39 @@ function cloudCoversPoint(x, y, t) {
   return false;
 }
 
+/* ============================================================
+   CHORDS / DOUBLE STOPS
+
+   Which notes count as "played at once". Grouping is by ATTACK time, not by
+   overlap: a held bass note under a moving line is polyphony but it is not a
+   double stop, and treating it as one would make the effect fire almost
+   continuously. Notes whose attacks fall within CHORD WINDOW of each other
+   are one group, which also catches a rolled chord the performer spreads.
+
+   Scanning is per shape across all its lanes, because a violin's chord tones
+   commonly arrive on separate MIDI tracks routed into the same path.
+   ============================================================ */
+function chordGroups(s, sc, t) {
+  const win = (sc.chordWin != null ? sc.chordWin : 80) / 1000;
+  const items = [];
+  for (let li = 0; li < s.lanes.length; li++) {
+    if (!sc.lanes[li].on) continue;
+    const act = getActive(s.id, li, t);
+    for (let i = 0; i < act.length; i++) items.push(act[i]);
+  }
+  if (items.length < 2) return null;
+  items.sort((a, b) => a.time - b.time);
+  const map = new Map();
+  let i = 0, key = 0;
+  while (i < items.length) {
+    let j = i + 1;
+    while (j < items.length && items[j].time - items[i].time <= win) j++;
+    if (j - i > 1) for (let k = i; k < j; k++) map.set(items[k], { size: j - i, key });
+    key++; i = j;
+  }
+  return map.size ? map : null;
+}
+
 function renderShapes(t, frameDt) {
   currentPlaybackTime = t;
 
@@ -4650,6 +5005,9 @@ function renderShapes(t, frameDt) {
     // loading a JSON doesn't blow up glow/size/trail everywhere at once.
     const se = shapeEnergy(s.id);
     const glowAmt = cfg.glow * se;
+    const chordBoost = sc.chordBoost || 0, chordLink = sc.chordLink || 0;
+    const chords = (chordBoost > 0.001 || chordLink > 0.001) ? chordGroups(s, sc, t) : null;
+    const linkPts = chordLink > 0.001 && chords ? new Map() : null;
 
     for (let li = 0; li < s.lanes.length; li++) {
       const lane = sc.lanes[li];
@@ -4751,10 +5109,19 @@ function renderShapes(t, frameDt) {
           }
         }
 
+        // a note that is part of a chord swells with how many notes are in it
+        const grp = chords ? chords.get(n) : null;
+        const cm = grp ? 1 + chordBoost * (grp.size - 1) : 1;
+        if (linkPts && grp) {
+          let arr = linkPts.get(grp.key);
+          if (!arr) linkPts.set(grp.key, arr = []);
+          arr.push({ x: p.x, y: p.y, gc, life });
+        }
+
         const lenScale = (sc.lenScale != null ? sc.lenScale : 1) * se;
         const thickScale = (sc.thickScale != null ? sc.thickScale : 1) * se;
-        const lenS = cfg.len * vs * lenScale, thickS = cfg.thick * vs * thickScale;
-        const ga = glowAmt * life;
+        const lenS = cfg.len * vs * lenScale * cm, thickS = cfg.thick * vs * thickScale * cm;
+        const ga = glowAmt * life * cm;
         // point-reflected mirror modes ('lr'/'radial') can just flip each
         // emitted point, so taper/reverb take it directly and draw both
         // copies themselves. 'opp' mirrors in path-space instead (a
@@ -4817,6 +5184,27 @@ function renderShapes(t, frameDt) {
         }
       }
     }
+
+    // CHORD LINK: after every lane has placed its notes, join the members of
+    // each chord so a double stop reads as one gesture instead of two
+    // unrelated dots. Drawn last so it sits over the heads it connects.
+    if (linkPts) {
+      for (const pts of linkPts.values()) {
+        if (pts.length < 2) continue;
+        pts.sort((a, b) => (a.y - b.y) || (a.x - b.x));
+        for (let k = 1; k < pts.length; k++) {
+          const a = pts[k - 1], b = pts[k];
+          const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
+          if (len < 1.5) continue;
+          const th = Math.max(0.8, cfg.thick * 0.42 * chordLink);
+          const lf = Math.min(a.life, b.life);
+          push((a.x + b.x) / 2, (a.y + b.y) / 2, len / 2, th,
+               Math.atan2(dy, dx), th, th * 2.4, 0,
+               (a.gc[0] + b.gc[0]) / 2, (a.gc[1] + b.gc[1]) / 2, (a.gc[2] + b.gc[2]) / 2,
+               0.55 * chordLink * lf, 1, 0, 0);
+        }
+      }
+    }
   }
 }
 
@@ -4870,6 +5258,26 @@ function fadeTrail(f, pw, ph) {
   gl.bindVertexArray(null);
 }
 
+/* The note layer, composited with a dark halo carved out of the background
+   behind it. ONE / ONE_MINUS_SRC_ALPHA means the result is
+   src.rgb + dst * (1 - shade): the notes still paint their own colour, and
+   the background is pulled down only where the mask says so. */
+function haloBlit(tex, pw, ph, radiusPx, strength, keepAlpha) {
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  gl.useProgram(haloProg);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.uniform1i(UH_TEX, 0);
+  gl.uniform2f(UH_PX, 1 / pw, 1 / ph);
+  gl.uniform1f(UH_RAD, radiusPx);
+  gl.uniform1f(UH_STR, strength);
+  gl.uniform1f(UH_KA, keepAlpha ? 1 : 0);
+  gl.bindVertexArray(texVAO);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.bindVertexArray(null);
+}
+
 /* Both textures are premultiplied, so srcFactor is ONE either way. */
 function blit(tex, flip, additive) {
   gl.enable(gl.BLEND);
@@ -4894,6 +5302,8 @@ function animate(now) {
   // visual offset shifts the picture against the transport so the first
   // rendered note can be nudged onto the first attack of your audio
   const t = tRaw + (cfg.offset || 0) / 1000;
+  // the scene timeline rewrites cfg for this frame before anything reads it
+  applyScenes(t);
   const pw = canvas.width, ph = canvas.height;
 
   // live audio energy: a stage-wide multiplier folded into the ENERGY macro,
@@ -4933,7 +5343,13 @@ function animate(now) {
   else if (pathPreviewOn && activeShapeId && routingSect.style.display !== 'none' && uiLayer.style.display !== 'none') {
     ensurePreviewCache(); blit(previewTex, true, false);
   }
-  blit(trailRT.tex, false, true);
+  // at 0 this is the plain additive blit it has always been — the halo pass
+  // is only wired in once you ask for it
+  const haloAmt = Math.max(0, Math.min(1, cfg.haloAmt || 0));
+  const haloRad = Math.max(1, (cfg.haloSize || 8) * DPR);
+  const haloKeepA = bgMode === 'transparent';
+  if (haloAmt > 0) haloBlit(trailRT.tex, pw, ph, haloRad, haloAmt, haloKeepA);
+  else blit(trailRT.tex, false, true);
 
   // one-frame white flash exactly on the first note — an unmistakable
   // alignment marker when scrubbing the recording next to the audio
@@ -4959,7 +5375,21 @@ function animate(now) {
     renderEqBars(t, dt); renderVoiceCircle(t, dt);
     renderBassOrbit(t, dt); renderSubWaveform(t, dt);
   }
-  flushInstances(null, pw, ph);
+  if (haloAmt > 0 && instCount) {
+    // same treatment as the notes, one pass later: gather this layer in its
+    // own target so the halo can be carved from it too
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fxRT.fb);
+    gl.viewport(0, 0, pw, ph);
+    gl.disable(gl.BLEND);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    flushInstances(fxRT.fb, pw, ph);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, pw, ph);
+    haloBlit(fxRT.tex, pw, ph, haloRad, haloAmt, haloKeepA);
+  } else {
+    flushInstances(null, pw, ph);
+  }
 
   // screen shake: fast exponential decay, applied as a plain CSS offset
   shakeAmt *= Math.pow(0.0004, dt);
@@ -5025,7 +5455,8 @@ function bindEqControl(id, key) {
  ['subwave-disty', 'subwaveDistY'], ['subwave-size', 'subwaveSize'], ['subwave-opacity', 'subwaveOpacity'],
  ['bg-mode', 'bgMode'], ['bg-color', 'bgColor'], ['bg-grad1', 'bgGrad1'], ['bg-grad2', 'bgGrad2'],
  ['bg-gradshape', 'bgGradShape'], ['bg-gradangle', 'bgGradAngle'], ['bg-chroma', 'bgChroma'],
- ['bg-fit', 'bgFit'], ['bg-dim', 'bgDim'], ['bg-blur', 'bgBlur'], ['bg-checkerbox', 'bgChecker']]
+ ['bg-fit', 'bgFit'], ['bg-dim', 'bgDim'], ['bg-blur', 'bgBlur'], ['bg-checkerbox', 'bgChecker'],
+ ['halo-amt', 'haloAmt'], ['halo-size', 'haloSize']]
   .forEach(([id, key]) => bindEqControl(id, key));
 
 /* Background image: kept in IndexedDB rather than cfg so exported presets
@@ -5104,7 +5535,324 @@ applyBackground();
     const bi = await idb.get('bgimg');
     if (bi && bi.url) setBgImage(bi.url, bi.name, true);
   } catch (e) {}
+  // last, because it is the slowest and the stage is already useful without it
+  try {
+    const bk = await idb.get('backing');
+    if (bk && bk.url) {
+      // remembered by path: re-fetch from audio/. If the file has since been
+      // renamed or moved, forget it rather than nagging on every load.
+      const r = await fetch(bk.url);
+      if (r.ok) await applyBackingFile(await r.blob(), bk.name, true, bk.url);
+      else { idb.del('backing'); audioFileStatus.textContent = `${bk.name} is no longer in audio/ — pick it again.`; }
+    } else if (bk && bk.blob) {
+      await applyBackingFile(bk.blob, bk.name, true);
+    }
+  } catch (e) {}
 })();
+
+/* ============================================================
+   SCENE TIMELINE
+
+   A scene is a complete cfg snapshot pinned to a timestamp. The rule that
+   shapes the whole design: the look at time t is COMPUTED from t on every
+   frame, never accumulated by "firing" a cue as the playhead sweeps past
+   it. Scrub backwards, jump into the middle, restart a take — the picture
+   is always right, because nothing was remembered between frames.
+
+   While the timeline runs, cfg is replaced each frame by the blend of the
+   scene you are in with the one before it, and the panel is written back
+   from that (throttled) so the sliders tell the truth about the screen.
+   ============================================================ */
+
+/* Playback and sync settings a scene has no business touching: audio
+   levels, the visual-offset calibration, and the frame size (changing it
+   re-lays out the canvas). These always come from the live panel, so you
+   can still ride the volume or re-check sync while a show runs. */
+const SCENE_SKIP = new Set(['vol', 'backingVol', 'backingDelay', 'muteSynth', 'offset',
+                            'preroll', 'frame', 'rscale', 'mutes',
+                            'legendOrder', 'legendLabels', 'legendHidden']);
+
+/* Values that must JUMP rather than slide, matched by key name at any
+   depth. Two reasons: counts and discrete flips where an in-between value
+   is meaningless or actively broken (WIND DIR sliding 1 -> -1 passes
+   through 0, which flattens the helix into a straight line), and anything
+   that repaints the cached background canvas — blending those would
+   re-rasterise a full-screen image, blur and all, on every single frame. */
+const SCENE_SNAP = new Set(['lockLow', 'lockHigh', 'eqBands', 'voiceBands', 'wispcap',
+                            'windDirA', 'windDirB', 'rayCount',
+                            'bgColor', 'bgGrad1', 'bgGrad2', 'bgGradAngle', 'bgGradShape',
+                            'bgChroma', 'bgFit', 'bgDim', 'bgBlur']);
+
+const HEX6 = /^#[0-9a-fA-F]{6}$/;
+let scenes = [];            // kept sorted by t: { t, fade, label, cfg }
+let sceneBase = null;       // the hand-authored look, handed back when the timeline stops
+let sceneHold = null, sceneHoldIdx = -99;   // cached non-fading blend, rebuilt on scene change
+let sceneDomIdx = -99, sceneDomAt = 0, sceneWasFading = false, sceneBgSig = '';
+let sceneIdxNow = -99;
+
+const sceneClone = v => (v && typeof v === 'object') ? JSON.parse(JSON.stringify(v)) : v;
+
+function mixHex(a, b, k) {
+  const A = parseInt(a.slice(1), 16), B = parseInt(b.slice(1), 16);
+  const ch = sh => Math.round(((A >> sh) & 255) + ((((B >> sh) & 255) - ((A >> sh) & 255)) * k));
+  return '#' + ((ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).padStart(6, '0');
+}
+
+/* One value, blended k of the way from a to b. Numbers slide, #rrggbb
+   slides through RGB, and everything else — enums, booleans, track names —
+   flips at the halfway point, because there is no meaningful value between
+   "Golden Spiral" and "Lightning Bolt". */
+function mixVal(key, a, b, k) {
+  if (a === undefined) return sceneClone(b);
+  if (b === undefined) return sceneClone(a);
+  const step = () => sceneClone(k < 0.5 ? a : b);
+  if (SCENE_SNAP.has(key) || typeof a !== typeof b) return step();
+  if (typeof a === 'number') return a + (b - a) * k;
+  if (typeof a === 'string') return (HEX6.test(a) && HEX6.test(b)) ? mixHex(a, b, k) : step();
+  if (typeof a === 'boolean') return step();
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b) || a.length !== b.length) return step();
+    return a.map((v, i) => mixVal(key, v, b[i], k));   // lanes: blend row by row
+  }
+  if (a && typeof a === 'object') {
+    const out = {};
+    for (const kk of new Set([...Object.keys(a), ...Object.keys(b)])) out[kk] = mixVal(kk, a[kk], b[kk], k);
+    return out;
+  }
+  return step();
+}
+
+/* A fresh whole-config blend. Always a new object even at k=1, so a slider
+   nudged while the timeline runs can't reach back and mutate the stored
+   scene it came from. */
+function sceneBlend(a, b, k) {
+  const out = {};
+  for (const kk of new Set([...Object.keys(a), ...Object.keys(b)])) {
+    out[kk] = mixVal(kk, a[kk], b[kk], k);
+  }
+  SCENE_SKIP.forEach(kk => { if (cfg[kk] !== undefined) out[kk] = sceneClone(cfg[kk]); });
+  return out;
+}
+
+const sceneBgSigOf = c => [c.bgMode, c.bgColor, c.bgGrad1, c.bgGrad2, c.bgGradAngle,
+                           c.bgGradShape, c.bgChroma, c.bgFit, c.bgDim, c.bgBlur,
+                           c.bgChecker].join('|');
+
+/* The look at time t — pure, with no memory of earlier frames. */
+function sceneStateAt(t) {
+  if (!sceneBase) return null;
+  let i = -1;
+  for (let j = 0; j < scenes.length && scenes[j].t <= t; j++) i = j;
+  if (i < 0) return { cfg: sceneBlend(sceneBase, sceneBase, 1), idx: -1, fading: false };
+  const cur = scenes[i];
+  const prev = i === 0 ? sceneBase : scenes[i - 1].cfg;
+  const f = Math.max(0, +cur.fade || 0);
+  if (f > 0 && t < cur.t + f) {
+    const u = (t - cur.t) / f;
+    return { cfg: sceneBlend(prev, cur.cfg, u * u * (3 - 2 * u)), idx: i, fading: true };
+  }
+  if (sceneHoldIdx !== i) { sceneHold = sceneBlend(cur.cfg, cur.cfg, 1); sceneHoldIdx = i; }
+  else SCENE_SKIP.forEach(kk => { if (cfg[kk] !== undefined) sceneHold[kk] = sceneClone(cfg[kk]); });
+  return { cfg: sceneHold, idx: i, fading: false };
+}
+
+function applyScenes(t) {
+  if (!sceneOn) return;
+  const st = sceneStateAt(t);
+  if (!st) return;
+  cfg = st.cfg;
+
+  // the blueprint is a cached trace of the paths themselves, so it has to be
+  // redrawn while those paths are morphing — and once more when a scene lands
+  if (st.fading || st.idx !== sceneIdxNow) invalidateBlueprint();
+  const sig = sceneBgSigOf(cfg);
+  if (sig !== sceneBgSig) { sceneBgSig = sig; bgDirty = true; applyBackground(); }
+
+  // push the computed look back onto the panel: instantly when a scene lands
+  // or a fade finishes, a few times a second while one is running
+  const ms = performance.now();
+  if (st.idx !== sceneDomIdx || (sceneWasFading && !st.fading) ||
+      (st.fading && ms - sceneDomAt > 200)) {
+    sceneDomAt = ms;
+    writeConfigToDOM();
+    if (st.idx !== sceneDomIdx) { sceneDomIdx = st.idx; markLiveScene(st.idx); }
+  }
+  sceneWasFading = st.fading;
+  sceneIdxNow = st.idx;
+  sceneNowEl.textContent = !scenes.length
+    ? 'no scenes yet — dial in a look and hit "+ Scene here"'
+    : st.idx < 0
+      ? 'before scene 1 — showing your authored look'
+      : 'scene ' + (st.idx + 1) + (scenes[st.idx].label ? ' · ' + scenes[st.idx].label : '') +
+        (st.fading ? ' · morphing in' : '');
+}
+
+/* ---------- state + persistence ---------- */
+const sceneListEl = document.getElementById('scene-list');
+const sceneNowEl = document.getElementById('scene-now');
+const sceneOnEl = document.getElementById('scene-on');
+
+function sortScenes() {
+  scenes.sort((a, b) => a.t - b.t);
+  sceneHoldIdx = -99; sceneIdxNow = -99; sceneDomIdx = -99;
+}
+function saveScenes() {
+  try { localStorage.setItem('mam-scenes', JSON.stringify(scenes)); } catch (e) {}
+}
+
+function setSceneOn(on) {
+  if (on === sceneOn) { sceneOnEl.checked = sceneOn; return; }
+  if (on) {
+    sceneBase = sceneClone(cfg);
+    sceneOn = true;
+    sceneHoldIdx = -99; sceneIdxNow = -99; sceneDomIdx = -99; sceneBgSig = '';
+  } else {
+    sceneOn = false;
+    if (sceneBase) {
+      SCENE_SKIP.forEach(kk => { if (cfg[kk] !== undefined) sceneBase[kk] = sceneClone(cfg[kk]); });
+      cfg = sceneBase; sceneBase = null;
+    }
+    invalidateBlueprint(); bgDirty = true; applyBackground();
+    writeConfigToDOM();
+    if (trackMeta.length) populateTrackSelects();
+    saveLocal();
+    sceneNowEl.textContent = '';
+    markLiveScene(-99);
+  }
+  sceneOnEl.checked = sceneOn;
+}
+
+function markLiveScene(idx) {
+  [...sceneListEl.children].forEach((row, i) => row.classList.toggle('live', i === idx));
+}
+
+/* Accepts "2:14.5", "2:14" or plain "134.5" — the timestamps you read off
+   the clock and the ones you get from a script both work. */
+function parseClock(str) {
+  const s = String(str).trim();
+  if (!s) return null;
+  const m = s.match(/^(\d+):(\d+(?:\.\d+)?)$/);
+  const v = m ? (+m[1]) * 60 + (+m[2]) : parseFloat(s);
+  return isFinite(v) && v >= 0 ? v : null;
+}
+
+function renderSceneList() {
+  sceneListEl.innerHTML = '';
+  if (!scenes.length) {
+    sceneListEl.innerHTML =
+      '<div class="text-[10px] text-gray-600 py-1">No scenes yet. Dial in a look, park the playhead, then "+ Scene here".</div>';
+    return;
+  }
+  scenes.forEach((sc, i) => {
+    const row = document.createElement('div');
+    row.className = 'scene-row';
+    const esc = String(sc.label || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    row.innerHTML =
+      '<input type="text" value="' + fmt(sc.t) + '" title="Timestamp — m:ss.cc or plain seconds">' +
+      '<input type="text" class="lbl-in" value="' + esc + '" placeholder="name">' +
+      '<input type="text" value="' + (+sc.fade || 0) + '" title="Morph time in seconds — 0 is a hard cut">' +
+      '<button type="button" class="scene-mini" title="Park the playhead on this scene">&rarr;</button>' +
+      '<button type="button" class="scene-mini" title="Re-capture this scene from the panel as it looks right now">&#8635;</button>' +
+      '<button type="button" class="scene-mini" title="Delete this scene">&times;</button>';
+    const ins = row.querySelectorAll('input');
+    const bts = row.querySelectorAll('button');
+
+    ins[0].addEventListener('change', () => {
+      const v = parseClock(ins[0].value);
+      if (v === null) { ins[0].value = fmt(sc.t); return; }
+      sc.t = v; sortScenes(); saveScenes(); renderSceneList();
+    });
+    ins[1].addEventListener('change', () => { sc.label = ins[1].value.trim(); saveScenes(); });
+    ins[2].addEventListener('change', () => {
+      const v = parseFloat(ins[2].value);
+      sc.fade = (isFinite(v) && v >= 0) ? v : 0;
+      ins[2].value = sc.fade; sceneHoldIdx = -99; saveScenes();
+    });
+    bts[0].addEventListener('click', () => {
+      Tone.Transport.seconds = Math.max(0, sc.t);
+      clearTrail(); backingSeek();
+    });
+    bts[1].addEventListener('click', () => {
+      if (sceneOn) {
+        showError('Turn RUN TIMELINE off first — while it runs the panel is being driven by the timeline, so there is nothing of your own to capture.');
+        return;
+      }
+      sc.cfg = sceneClone(cfg); sceneHoldIdx = -99; saveScenes();
+      bts[1].textContent = '✓';
+      setTimeout(() => { bts[1].innerHTML = '&#8635;'; }, 700);
+    });
+    bts[2].addEventListener('click', () => {
+      scenes.splice(i, 1); sortScenes(); saveScenes(); renderSceneList();
+    });
+    sceneListEl.appendChild(row);
+  });
+  markLiveScene(sceneOn ? sceneIdxNow : -99);
+}
+
+function addScene(look, label) {
+  scenes.push({
+    t: Math.max(0, Tone.Transport.seconds),
+    fade: scenes.length ? 2 : 0,          // the first scene is the opening look, so no morph into it
+    label: label || '',
+    cfg: sceneClone(look)
+  });
+  sortScenes(); saveScenes(); renderSceneList();
+}
+
+/* ---------- wiring ---------- */
+sceneOnEl.addEventListener('change', () => setSceneOn(sceneOnEl.checked));
+document.getElementById('scene-add').addEventListener('click', () => {
+  if (sceneOn) {
+    showError('Turn RUN TIMELINE off first — a new scene is captured from the look you dialled in by hand.');
+    return;
+  }
+  addScene(cfg, '');
+});
+document.getElementById('scene-clear').addEventListener('click', () => {
+  if (!scenes.length) return;
+  if (!confirm('Delete all ' + scenes.length + ' scenes? This cannot be undone.')) return;
+  scenes = []; sortScenes(); saveScenes(); renderSceneList();
+});
+document.getElementById('scene-save').addEventListener('click', async () => {
+  const blob = new Blob([JSON.stringify({ format: 'mam-show', v: 1, scenes }, null, 2)],
+                        { type: 'application/json' });
+  await saveBlob(blob, 'mam-show.json', 'MAM show', 'json', 'application/json');
+});
+document.getElementById('scene-import').addEventListener('click',
+  () => document.getElementById('scene-file').click());
+document.getElementById('scene-file').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => {
+    try {
+      const parsed = JSON.parse(ev.target.result);
+      const list = Array.isArray(parsed) ? parsed : parsed.scenes;
+      if (!Array.isArray(list)) throw new Error('no scenes');
+      scenes = list.map(sc => ({
+        t: +sc.t || 0, fade: +sc.fade || 0, label: sc.label || '',
+        cfg: repairConfig(Object.assign(defaultConfig(), sc.cfg || {}))
+      }));
+      sortScenes(); saveScenes(); renderSceneList();
+    } catch (err) { showError('Bad show file.'); }
+  };
+  r.readAsText(f);
+  e.target.value = '';
+});
+populateFolderSelect('scene-preset-select', 'presets/', ['.json'], async (path, name) => {
+  const parsed = await fetch(path).then(r => r.json());
+  addScene(repairConfig(Object.assign(defaultConfig(), parsed)), name.replace(/\.json$/i, ''));
+});
+
+try {
+  const raw = localStorage.getItem('mam-scenes');
+  const list = raw ? JSON.parse(raw) : null;
+  if (Array.isArray(list)) scenes = list.map(sc => ({
+    t: +sc.t || 0, fade: +sc.fade || 0, label: sc.label || '',
+    cfg: repairConfig(Object.assign(defaultConfig(), sc.cfg || {}))
+  }));
+} catch (e) {}
+sortScenes();
+renderSceneList();
 
 requestAnimationFrame(animate);
 </script>
