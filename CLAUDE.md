@@ -237,6 +237,21 @@ for the note's actual pitch and find where its energy rises. This settled the
 Violin Sonata's missing F6 — energy peaked at 99.919 s against a repair that
 placed it at 99.910, while both aggregate metrics preferred the broken version.
 
+> **Harmonics contaminate upward.** A pitch's band is fed by every note a
+> fifth, an octave or a twelfth below it that is still ringing. Reading the
+> Partita's chord, A5 appeared to enter 93 ms *before* the A3 under it —
+> impossible on a violin — because A5 is the third harmonic of the D4 that
+> precedes the chord. **Two independent instances returning the same number
+> is the tell:** a real performance detail varies between takes, an artifact
+> does not. Probe the *lowest* tone of a chord, which has nothing beneath it,
+> and check what was sounding immediately before.
+
+**4. Lower the onset threshold in quiet passages.** The default
+`delta=0.08` finds *nothing* in a soft stretch, which means the aligner had
+nothing to hold onto there either — that is where it drifts. The Partita's
+post-rest note was 519 ms early for exactly this reason, and the diagnostic
+was that a `delta=0.02` pass found 29 attacks where the default found zero.
+
 ### Always check structure separately from error
 
 Average error says nothing about whether the picture is watchable. Compute, per
@@ -267,13 +282,37 @@ The right fix is usually two or three anchors, not a re-derivation. Keep every
 audio-confirmed anchor, re-interpolate only the broken span between confirmed
 neighbours, and re-verify. The Sonata's fix moved **18 notes out of 7541**.
 
+### A fix has to be perceptible to be a fix
+
+Under about 100 ms nothing reads on screen — 30 ms is two frames at 60 fps.
+A first attempt at the Partita's chord staggered it by 30 ms per string, which
+was defensible musically and completely invisible. When he says he sees no
+change, check the size of the change before re-examining the reasoning.
+
+Domain fact worth keeping: **a violin cannot sound four strings at once.** A
+four-note chord is played as two pairs — the lower pair on the beat, left to
+decay, then the upper pair entering separately and sustaining. In this
+recording that gap is 580–650 ms, not the few tens of milliseconds a "roll"
+implies. Both of the Partita's four-note chords do it, and they agree.
+
+### Source transcriptions drop notes
+
+Compare audio attacks to MIDI onsets per window. The Partita runs 1473
+attacks to 1082 onsets overall, but 1.66 attacks per note in one window
+against 1.16–1.32 in the well-transcribed stretches — a 32nd-note group
+flattened into even 16ths. The aligner then has to stretch three notes across
+nine attacks, which reads as the run dragging. **No re-timing fixes a missing
+note**, so diagnose this before trying to repair timing.
+
 ### Kenneth's ear beats the metrics
 
 He has been right every time he said something looked wrong, including when
 every number disagreed. On Op.130 he insisted the opening was late; onset
 metrics said centred; chroma agreement found a real −0.16 to −0.58 s lateness.
 **Treat a report of visible drift as ground truth and go find the measurement
-that shows it.**
+that shows it.** His timestamps are accurate to the second and worth taking
+literally — "very soon after 1:13" was the 73.14 s entry of a chord's upper
+pair, which no aggregate metric had flagged.
 
 ---
 
