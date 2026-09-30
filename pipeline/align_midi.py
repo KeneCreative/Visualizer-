@@ -503,7 +503,7 @@ def _apply_warp(midi_data, warp_func, output_path, extend_final_to=None,
 if __name__ == "__main__":
     align_midi_to_audio(
         audio_path=os.path.join(AUDIO_DIR, 'String_Quartet_in_F_Major_Op_135_I_Allegretto.wav'),
-        midi_path=os.path.join(MIDI_SRC_DIR, 'quartet_16_1_(c)edwards.mid'),
+        midi_path=os.path.join(MIDI_SRC_DIR, 'quartet_16_1.mid'),
         output_path=os.path.join(MIDI_OUT_DIR, 'Beethoven135_1_aligned.mid'),
         hop_length=512,   # finer than the auto-picked 1024 (dur>360s tier) — cheap enough at
                           # this length (~8s DTW) and tightens onset accuracy through the piece
