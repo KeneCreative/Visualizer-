@@ -5206,11 +5206,18 @@ function cloudCoversPoint(x, y, t) {
    ============================================================ */
 function chordGroups(s, sc, t) {
   const win = (sc.chordWin != null ? sc.chordWin : 80) / 1000;
-  const items = [];
+  // A note is collected once even when several lanes point at the same track,
+  // which the Solo layout does deliberately — otherwise a two-note chord
+  // reports size 4 and swells twice as hard as the slider says.
+  const seen = new Set(), items = [];
   for (let li = 0; li < s.lanes.length; li++) {
     if (!sc.lanes[li].on) continue;
     const act = getActive(s.id, li, t);
-    for (let i = 0; i < act.length; i++) items.push(act[i]);
+    for (let i = 0; i < act.length; i++) {
+      if (seen.has(act[i])) continue;
+      seen.add(act[i]);
+      items.push(act[i]);
+    }
   }
   if (items.length < 2) return null;
   items.sort((a, b) => a.time - b.time);
@@ -5342,15 +5349,14 @@ function renderShapes(t, frameDt) {
         // a note that is part of a chord swells with how many notes are in it
         const grp = chords ? chords.get(n) : null;
         const cm = grp ? 1 + chordBoost * (grp.size - 1) : 1;
-        if (linkPts && grp) {
-          let arr = linkPts.get(grp.key);
-          if (!arr) linkPts.set(grp.key, arr = []);
-          arr.push({ x: p.x, y: p.y, gc, life });
-        }
-
         const lenScale = (sc.lenScale != null ? sc.lenScale : 1) * se;
         const thickScale = (sc.thickScale != null ? sc.thickScale : 1) * se;
         const lenS = cfg.len * vs * lenScale * cm, thickS = cfg.thick * vs * thickScale * cm;
+        if (linkPts && grp) {
+          let arr = linkPts.get(grp.key);
+          if (!arr) linkPts.set(grp.key, arr = []);
+          arr.push({ x: p.x, y: p.y, gc, life, th: thickS });
+        }
         const ga = glowAmt * life * cm;
         // point-reflected mirror modes ('lr'/'radial') can just flip each
         // emitted point, so taper/reverb take it directly and draw both
@@ -5426,12 +5432,18 @@ function renderShapes(t, frameDt) {
           const a = pts[k - 1], b = pts[k];
           const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
           if (len < 1.5) continue;
-          const th = Math.max(0.8, cfg.thick * 0.42 * chordLink);
+          // Scaled off the NOTES' own drawn thickness, not cfg.thick. Deriving
+          // it from the global pinned the link to its 0.8 floor at any house
+          // setting, so the slider only ever changed opacity.
+          // the 1.9 mirrors emitGlyph's own round-glyph radius, so at 1.0 the
+          // link reads exactly as thick as the notes it joins rather than
+          // thinner than them
+          const th = Math.max(1.1, (s.half.thick || 4) * (a.th + b.th) * 0.5 * 1.9 * chordLink);
           const lf = Math.min(a.life, b.life);
           push((a.x + b.x) / 2, (a.y + b.y) / 2, len / 2, th,
                Math.atan2(dy, dx), th, th * 2.4, 0,
                (a.gc[0] + b.gc[0]) / 2, (a.gc[1] + b.gc[1]) / 2, (a.gc[2] + b.gc[2]) / 2,
-               0.55 * chordLink * lf, 1, 0, 0);
+               Math.min(1, 0.85 * chordLink) * lf, 1, 0, 0);
         }
       }
     }
