@@ -47,7 +47,7 @@ def align_midi_to_audio(audio_path, midi_path, output_path, start_time=0.0,
                         clip_duration=None, hop_length=None, method='dtw',
                         midi_offset=0.0, subseq=None, transpose='auto',
                         onset_weight=0.8, refine=True, refine_hop=256,
-                        extend_tail=True):
+                        refine_pad_s=None, extend_tail=True):
     print("Loading and clipping audio...")
     y_audio, sr = librosa.load(audio_path, sr=22050, offset=start_time, duration=clip_duration)
     dur = librosa.get_duration(y=y_audio, sr=sr)
@@ -129,10 +129,22 @@ def align_midi_to_audio(audio_path, midi_path, output_path, start_time=0.0,
     # fine hop, chunk by chunk, each chunk searched only in the small audio
     # window the coarse path already pointed at — so the cost matrices stay
     # tiny while the resolution goes up several times over.
+    #
+    # How far an interior chunk may legitimately sit from the coarse path
+    # scales with the piece, for the same reason hop_length does: the longer
+    # the movement, the further a rubato performance can wander before the
+    # coarse pass catches up. At the old fixed 1.5 s a long movement had
+    # almost every chunk rejected as "locked onto the wrong thing" -- on the
+    # Violin Sonata it threw away 34 of 37, and raising it to 3.0 took the
+    # error from 23.7 ms to 13.7 ms. Same thresholds as the hop ladder above
+    # so the two read as one rule.
+    if refine_pad_s is None:
+        refine_pad_s = 1.5 if dur < 360 else 3.0 if dur < 720 else 4.5
     if refine and refine_hop < hop_length:
+        print(f"Refining at hop {refine_hop} (drift tolerance {refine_pad_s:.1f}s)...")
         time_midi, time_audio = _refine_path(
             y_audio, midi_data, sr, refine_hop, onset_weight, transpose,
-            time_midi, time_audio, midi_dur, dur)
+            time_midi, time_audio, midi_dur, dur, pad_s=refine_pad_s)
 
     print("Calculating warp function...")
     _, unique_indices = np.unique(time_midi, return_index=True)
@@ -339,6 +351,15 @@ def _refine_path(y_audio, midi_data, sr, hop, onset_weight, transpose,
         tm, ta = tm[order], ta[order]
     ta = np.maximum.accumulate(ta)
     print(f"  {kept}/{len(starts)} chunks refined")
+    # A low keep rate means the drift test threw the refinement away, so the
+    # result is really just the coarse path wearing a fine-hop label. Say so
+    # -- this failed silently for a long time and the only symptom was an
+    # error figure that was quietly twice what it should have been.
+    if kept < 0.6 * len(starts):
+        print(f"  WARNING: {len(starts) - kept} chunks were rejected as drifting "
+              f"more than {pad_s:.1f}s from the coarse path. Mostly the coarse "
+              f"path is fine and the tolerance is too tight -- re-run with a "
+              f"larger refine_pad_s before trusting this.")
     return tm, ta
 
 
