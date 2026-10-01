@@ -367,6 +367,16 @@ wrong end time.
 stored float sits a hair below the literal. Use an epsilon when sweeping a
 region, or boundary notes silently keep stale times.
 
+**MP3 loses attacks, not pitches.** Measured on 30 s of solo violin: an MP3
+round trip leaves chroma essentially untouched (0.9996 frame similarity) and
+introduces *no* decode offset — librosa and the browser's `decodeAudioData`
+both return the same sample count with zero lag — but it drops **3–8% of
+detected onsets at every threshold**. That is the onset-strength row the DTW
+stacks on chroma, and it is also what the verification method leans on when
+it lowers `delta` to find attacks in quiet passages. Prefer WAV (or FLAC,
+which is identical and half the size). An MP3 is still worth aligning if it
+is the only source; converting one to WAV gains nothing.
+
 **Streamed WAV headers.** ffmpeg/yt-dlp WAVs land with RIFF/data size
 `0xFFFFFFFF`. librosa copes; the browser's `decodeAudioData` takes it literally
 and the backing track cuts out early. Run `pipeline/fix_wav_headers.py` on any
