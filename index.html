@@ -1070,10 +1070,22 @@ const SHAPES = [
     lanes: [{ id: 'a', label: 'Voice A' }, { id: 'b', label: 'Voice B' }],
     mirrors: ['none'],
     ampFrac: 0.18, cycles: 3,   // amplitude as a fraction of stage height; full cycles across the width
+    // Reuses the helix's TWIST SPEED instead of inventing a DRIFT control:
+    // declaring twistSpeed is what makes the panel generator emit that
+    // slider, and on a wave "turning the pattern" is the crests walking
+    // along it. Defaults to 0 so every saved preset's wave still stands
+    // exactly where it was drawn.
+    twistSpeed: 0,
     place(t, li, g) {
       const A = g.H * this.ampFrac, C = this.cycles;
+      const scfg = cfg.shapes['sine'];
+      const drift = currentPlaybackTime *
+        ((scfg && scfg.twistSpeed != null) ? scfg.twistSpeed : this.twistSpeed);
       const phase = li === 1 ? Math.PI : 0;   // Voice B rides a half-cycle out of phase from Voice A
-      const th = t * C * TAU + phase;
+      // subtracted, so a positive speed sends the crests left to right.
+      // The note's x is still t * W — pitch alone — so the wave moves
+      // underneath the notes rather than carrying them anywhere.
+      const th = t * C * TAU + phase - drift;
       return { x: t * g.W, y: g.CY + A * Math.sin(th),
                angle: Math.atan2(A * C * TAU * Math.cos(th), g.W) };
     }
@@ -1366,6 +1378,139 @@ const SHAPES = [
       return { x: g.CX + P.x * P.len * t, y: crossY + P.y * P.len * t,
                angle: Math.atan2(P.y, P.x) };
     }
+  },
+
+  /* ---- LATERAL PATHS -------------------------------------------------
+     Everything above is either a column (pitch -> height) or a figure
+     centred on the stage. These four read left to right instead, and all
+     four move: the stage itself sways while a note's x still comes from
+     its pitch alone, so nothing here shifts where a note lands.
+
+     They all steer that motion from the helix's TWIST SPEED rather than
+     inventing a second vocabulary — the panel generator emits that slider
+     for any shape that declares twistSpeed, and 0 freezes any of them.
+     -------------------------------------------------------------------- */
+  {
+    id: 'stand', label: 'Standing Wave', glow: '#5fd3ff', ink: '#d9f4ff',
+    glyph: 'dot', half: { len: 6, thick: 5 },
+    // Two voices sharing one string, a quarter period apart — when A is at
+    // full stretch B is passing through flat, so a pair never collapses
+    // into looking like one line the way two in-phase strands can.
+    lanes: [{ id: 'a', label: 'Voice A' }, { id: 'b', label: 'Voice B' }],
+    mirrors: ['none'],
+    // Belly height off the SMALLER stage dimension, not the height. A
+    // lateral path in a 9:16 frame would otherwise swing further than the
+    // stage is wide and read as a vertical zigzag instead of a wave.
+    ampFrac: 0.3,
+    modes: 3,       // half-wavelengths across the width — the MODE slider
+    twistSpeed: 1.4,
+    place(t, li, g) {
+      const sc = cfg.shapes['stand'];
+      const n = Math.max(1, (sc && sc.modes != null) ? sc.modes : this.modes);
+      const rate = (sc && sc.twistSpeed != null) ? sc.twistSpeed : this.twistSpeed;
+      // sin(n*PI*t) is the string's standing shape and is zero at every
+      // node no matter what the time term does, so the pitches that land on
+      // a node never move at all. That is what keeps this from reading as
+      // uniform wobble — the picture gets fixed points to swing against.
+      const swing = Math.cos(currentPlaybackTime * rate + (li === 1 ? Math.PI / 2 : 0));
+      const A = Math.min(g.W, g.H) * this.ampFrac * swing;
+      return param(u => ({ x: u * g.W, y: g.CY + A * Math.sin(n * Math.PI * u) }), t);
+    }
+  },
+  {
+    id: 'harm', label: 'Harmonograph', glow: '#ffc440', ink: '#ffe8bb',
+    glyph: 'bar', half: { len: 8, thick: 3 },
+    lanes: [{ id: 'main', label: 'Main' }, { id: 'mirror', label: 'Mirrored' }],
+    mirrors: ['none'],
+    // Two pendulums at right angles, both running down: the classic
+    // harmonograph. Low notes ride the wide outer loops, high notes wind
+    // into the centre. A/B are the frequency ratio, exactly as on Lissajous.
+    A: 3, B: 2, turns: 5, decay: 1.15, scale: 1.9,
+    twistSpeed: 0.3,
+    place(t, li, g) {
+      const sc = cfg.shapes['harm'];
+      const spin = currentPlaybackTime *
+        ((sc && sc.twistSpeed != null) ? sc.twistSpeed : this.twistSpeed);
+      const R = g.core * this.scale;
+      return mirroredLane('harm', t, li, g, tt => param(u => {
+        const d = Math.exp(-this.decay * u);        // the pendulums dying away
+        // spin advances only the x pendulum's phase, so the figure walks
+        // through its whole phase family — open, crossed, closed and back —
+        // instead of rigidly rotating. That slow reshaping is the thing a
+        // real harmonograph does that a static Lissajous cannot.
+        const a = this.A * this.turns * TAU * u + spin;
+        const b = this.B * this.turns * TAU * u + Math.PI / 2;
+        return { x: g.CX + R * d * Math.sin(a), y: g.CY + R * d * Math.sin(b) };
+      }, tt));
+    }
+  },
+  {
+    id: 'swag', label: 'Swag', glow: '#e85fa0', ink: '#ffd6e8',
+    glyph: 'dot', half: { len: 6, thick: 4 },
+    lanes: [{ id: 'a', label: 'Voice A' }, { id: 'b', label: 'Voice B' }],
+    mirrors: ['none'],
+    // pivotY has to clear the swing: at full tilt the rising end lifts by
+    // span/2 * W * sin(swing), which in a 16:9 frame is ~144px — hang the
+    // pivot at 0.08 and that end leaves the top of the stage entirely.
+    span: 0.84, sag: 0.46, curve: 2.6, swing: 0.18, pivotY: 0.17,
+    twistSpeed: 1.1,
+    place(t, li, g) {
+      const sc = cfg.shapes['swag'];
+      const rate = (sc && sc.twistSpeed != null) ? sc.twistSpeed : this.twistSpeed;
+      // the second voice trails the first slightly rather than sitting a
+      // half period away: two ropes on the same hook, not a mirror
+      const ang = this.swing * Math.sin(currentPlaybackTime * rate - (li === 1 ? 0.55 : 0));
+      const k = this.curve, ch = Math.cosh(k / 2) - 1;
+      // the pivot never hangs lower than the swing needs: at full tilt the
+      // rising end lifts by half the span times sin(swing), which on an
+      // ultrawide stage is taller than pivotY alone would allow for
+      const lift = (this.span / 2) * g.W * Math.abs(Math.sin(this.swing));
+      const px = g.W * 0.5, py = Math.max(g.H * this.pivotY, lift + g.H * 0.02);
+      const ca = Math.cos(ang), sa = Math.sin(ang);
+      return param(u => {
+        const dx = (u - 0.5) * g.W * this.span;
+        // a hanging chain is a catenary, not a parabola — cosh, flipped so
+        // the ends sit level with the pivot and the middle hangs lowest
+        // the drop is capped against the WIDTH as well as taken from the
+        // height: in a very tall frame an uncapped sag hangs so far that
+        // rotating it swings the rope out past the sides of the stage
+        const drop = Math.min(g.H * this.sag, g.W * 0.75);
+        const dy = drop * (1 - (Math.cosh(k * (u - 0.5)) - 1) / ch);
+        // the whole chain rotates about the pivot instead of rippling: one
+        // rigid object swinging, which is what separates it from the waves
+        return { x: px + dx * ca - dy * sa, y: py + dx * sa + dy * ca };
+      }, t);
+    }
+  },
+  {
+    id: 'ridge', label: 'Ridges', glow: '#7ddc5e', ink: '#d6ffc8',
+    glyph: 'dot', half: { len: 6, thick: 4 },
+    // One row per voice, back to front. Same row idiom as Grass and Clouds,
+    // laid out as a landscape — three voices become three depths.
+    lanes: [{ id: 'b', label: 'Back row' }, { id: 'm', label: 'Middle row' },
+            { id: 'f', label: 'Front row' }],
+    mirrors: ['none'],
+    // rows space down the stage, so those stay fractions of height; the
+    // ridge's own height comes off the smaller dimension for the same
+    // reason the standing wave's does
+    rowTop: 0.3, rowGap: 0.22, amp: 0.085,
+    twistSpeed: 0.5,
+    place(t, li, g) {
+      const sc = cfg.shapes['ridge'];
+      const rate = (sc && sc.twistSpeed != null) ? sc.twistSpeed : this.twistSpeed;
+      const T = currentPlaybackTime * rate;
+      return param(u => {
+        // two incommensurate sines per row, because a single one visibly
+        // repeats inside the frame and stops looking like terrain
+        const w = Math.sin(u * TAU * (1.4 + li * 0.6) + T * (1 + li * 0.8))
+                + 0.45 * Math.sin(u * TAU * (2.9 + li * 0.8) - T * (0.5 + li * 0.4));
+        // the front row drifts fastest — the speed difference is the whole
+        // illusion of depth, so the rows must not share a rate
+        return { x: u * g.W,
+                 y: g.H * (this.rowTop + li * this.rowGap)
+                    + Math.min(g.W, g.H) * this.amp * w };
+      }, t);
+    }
   }
 ];
 const SHAPE_BY_ID = Object.fromEntries(SHAPES.map(s => [s.id, s]));
@@ -1491,6 +1636,7 @@ function defaultConfig(flavour) {
     c.shapes['dna'].windDirB = -1;
   }
   if (c.shapes['parc']) c.shapes['parc'].straighten = 0;
+  if (c.shapes['stand']) c.shapes['stand'].modes = 3;
   if (c.shapes['cloud']) c.shapes['cloud'].gather = 0;
   if (c.shapes['bolt']) c.shapes['bolt'].smoothCorners = false;
   if (flavour === 'factory') Object.assign(c, FACTORY_LOOK);
@@ -2108,7 +2254,9 @@ const BP = {
   violet: 'rgba(124,77,255,.28)', pink: 'rgba(255,77,196,.28)', rosegold: 'rgba(255,138,0,.28)',
   boltyellow: 'rgba(255,243,77,.3)', crossred: 'rgba(255,85,85,.3)',
   cloud: 'rgba(188,216,255,.28)', sun: 'rgba(255,204,51,.3)', grass: 'rgba(125,220,94,.3)',
-  halfsun: 'rgba(255,176,32,.3)'
+  halfsun: 'rgba(255,176,32,.3)',
+  stand: 'rgba(95,211,255,.26)', harm: 'rgba(255,196,64,.24)',
+  swag: 'rgba(232,95,160,.28)', ridge: 'rgba(125,220,94,.26)'
 };
 
 function line(c, x1, y1, x2, y2, color, w = 1) {
@@ -2275,6 +2423,25 @@ function drawBlueprint(c) {
   traceGuide(c, 'grass', 2, 2, BP.grass, 1);
   traceGuide(c, 'halfsun', 0, 90, BP.halfsun, 1);   // upper arc + a ray fan just outside it
   traceGuide(c, 'halfsun', 1, 48, BP.halfsun, 1);
+
+  // The lateral paths trace only once they are routed. Every guide above
+  // predates the presets, so it is already part of what each saved look
+  // draws; four more unconditional outlines would change the blueprint of
+  // every preset on disk without being asked.
+  traceIfRouted(c, 'stand', [0, 1], 300, BP.stand, 1);
+  traceIfRouted(c, 'harm',  [0, 1], 900, BP.harm, 1);
+  traceIfRouted(c, 'swag',  [0, 1], 240, BP.swag, 1);
+  traceIfRouted(c, 'ridge', [0, 1, 2], 300, BP.ridge, 1);
+}
+
+/* A path is "routed" when its own track is set, or any lane overrides it. */
+function traceIfRouted(c, sid, lanes, steps, color, w) {
+  const sc = cfg.shapes[sid];
+  if (!sc) return;
+  const routed = (sc.track && sc.track !== 'none') ||
+    (sc.lanes || []).some(l => l.track && l.track !== 'none' && l.track !== 'shared');
+  if (!routed) return;
+  lanes.forEach(li => traceGuide(c, sid, li, steps, color, w));
 }
 
 /* Draws only the currently-selected path's own outline in bold white —
@@ -2893,6 +3060,10 @@ function buildShapeSections() {
             ${s.mirrors.map(m => `<option value="${m}">${MIRROR_LABEL[m] || m}</option>`).join('')}
           </select>
         </div>` : ''}
+        ${s.id === 'stand' ? `
+        <div class="col-span-2"><span class="lbl text-sky-300">MODE <span class="text-gray-300 font-mono" id="ro-modes-${s.id}">${s.modes}</span></span>
+          <input type="range" data-cfg="shape.${s.id}.modes" data-readout="ro-modes-${s.id}" min="1" max="8" step="1" value="${s.modes}"
+            title="How many half-waves fit across the stage. Every node between them is a pitch that never moves."></div>` : ''}
         ${s.id === 'parc' ? `
         <div class="col-span-2"><span class="lbl text-purple-300">STRAIGHTEN <span class="text-gray-300 font-mono" id="ro-straighten-${s.id}">0</span></span>
           <input type="range" data-cfg="shape.${s.id}.straighten" data-readout="ro-straighten-${s.id}" data-snap-mid="0" min="0" max="1" step="0.01" value="0"
@@ -3780,7 +3951,7 @@ function applyControl(node) {
         key === 'vibAmt' || key === 'vibRate' || key === 'lenScale' || key === 'thickScale' ||
         key === 'offX' || key === 'offY' || key === 'distX' || key === 'distY' || key === 'twistSpeed' ||
         key === 'windDirA' || key === 'windDirB' || key === 'straighten' || key === 'gather' ||
-        key === 'rayCount' || key === 'raySpan' ||
+        key === 'rayCount' || key === 'raySpan' || key === 'modes' ||
         key === 'chordBoost' || key === 'chordLink' || key === 'chordWin' ||
         key === 'petalAmt' || key === 'petalFall') v = parseFloat(raw);
     cfg.shapes[sid][key] = v;
@@ -3795,7 +3966,8 @@ function applyControl(node) {
     }
     if (key === 'offX' || key === 'offY' || key === 'distX' || key === 'distY' || key === 'mirrorMode' || key === 'twistSpeed' ||
         key === 'helixMode' || key === 'windDirA' || key === 'windDirB' || key === 'straighten' ||
-        key === 'gather' || key === 'mirror' || key === 'smoothCorners') invalidateBlueprint();
+        key === 'gather' || key === 'mirror' || key === 'smoothCorners' ||
+        key === 'modes') invalidateBlueprint();
     if (key === 'track') { resetScanners(); firstNote = null; if (typeof computeFirstNote === 'function') computeFirstNote(); refreshTabTrackHighlights(); }
   } else if (parts_[0] === 'lane') {
     const [, sid, li, key] = parts_;
@@ -5822,6 +5994,9 @@ const SCENE_SKIP = new Set(['vol', 'backingVol', 'backingDelay', 'muteSynth', 'o
    re-rasterise a full-screen image, blur and all, on every single frame. */
 const SCENE_SNAP = new Set(['lockLow', 'lockHigh', 'eqBands', 'voiceBands', 'wispcap',
                             'windDirA', 'windDirB', 'rayCount',
+                            // a mode count, like rayCount: half a half-wave
+                            // is not a shape, so it steps rather than lerps
+                            'modes',
                             'bgColor', 'bgGrad1', 'bgGrad2', 'bgGradAngle', 'bgGradShape',
                             'bgChroma', 'bgFit', 'bgDim', 'bgBlur']);
 
