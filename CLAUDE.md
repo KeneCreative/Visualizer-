@@ -192,8 +192,13 @@ Then a **second pass**: `_refine_path()` re-matches chunk by chunk at
 coarse pass found. A full fine-hop matrix over a whole movement would be
 several GB; these are tens of MB.
 
-`subseq=True` engages automatically when the MIDI is under 60% of the audio
-length. `method='linear'` (constant scale + offset) is for grid-locked
+`subseq=True` engages automatically when the MIDI is under **85%** of the
+audio length — and that rule misfires when the gap is tempo rather than
+missing music. The Chaconne's transcription is notated at 60 bpm against a
+performance 22% slower, which tripped it at 82%; a subsequence match is free
+to start anywhere, so it hung the first note 25 s into a recording that
+starts playing at 0.37 s. **Pass `subseq=False` for a complete movement**
+whenever the MIDI is merely slower than notated. `method='linear'` (constant scale + offset) is for grid-locked
 recordings where chroma DTW has nothing to lock onto.
 
 ### Known tunable debt

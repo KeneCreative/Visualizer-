@@ -312,13 +312,20 @@ def _refine_path(y_audio, midi_data, sr, hop, onset_weight, transpose,
         sel = (tm >= lo) & (tm <= hi)
         if not sel.any():
             continue
-        if not (is_first or is_last):
-            # sanity: an interior chunk that lands far from where the coarse
-            # pass put it has almost certainly locked onto the wrong thing —
-            # keep the coarse answer. Doesn't apply at the edges (see above).
-            drift = float(np.median(ta[sel] - coarse(tm[sel])))
-            if abs(drift) > pad_s:
-                continue
+        # sanity: a chunk that lands far from where the coarse pass put it has
+        # almost certainly locked onto the wrong thing — keep the coarse
+        # answer. The edge chunks get the wider tolerance that matches their
+        # wider search window, but they are NOT exempt: the reason they search
+        # wide is a fermata's decay or trailing room tone, which is worth a few
+        # seconds, not tens. Skipping the check entirely let the Chaconne's
+        # opening chunk land a whole variation late — on a theme and variations
+        # every four bars look alike to chroma, so a free search over the first
+        # 36 s has several equally good answers and no reason to pick the right
+        # one. Unchecked, that 25 s error was then accepted outright.
+        tol = edge_pad_s if (is_first or is_last) else pad_s
+        drift = float(np.median(ta[sel] - coarse(tm[sel])))
+        if abs(drift) > tol:
+            continue
         out_m.append(tm[sel])
         out_a.append(ta[sel])
         kept += 1

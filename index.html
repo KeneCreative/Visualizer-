@@ -1063,7 +1063,8 @@ const SHAPES = [
     }
   },
   {
-    id: 'sine', label: 'Sine Wave', glow: '#a8ff00', ink: '#e8ffcc',
+    id: 'sine', twistLabel: 'DRIFT SPEED',
+    twistHelp: 'How fast the crests travel along the wave', label: 'Sine Wave', glow: '#a8ff00', ink: '#e8ffcc',
     glyph: 'dot', half: { len: 6, thick: 5 },
     // Already 2 independent voices (their own track/color each), a half-cycle
     // apart — no runtime mirror needed on top of that.
@@ -1391,7 +1392,8 @@ const SHAPES = [
      for any shape that declares twistSpeed, and 0 freezes any of them.
      -------------------------------------------------------------------- */
   {
-    id: 'stand', label: 'Standing Wave', glow: '#5fd3ff', ink: '#d9f4ff',
+    id: 'stand', twistLabel: 'SWAY SPEED',
+    twistHelp: 'How fast the bellies swing. The nodes between them never move', label: 'Standing Wave', glow: '#5fd3ff', ink: '#d9f4ff',
     glyph: 'dot', half: { len: 6, thick: 5 },
     // Two voices sharing one string, a quarter period apart — when A is at
     // full stretch B is passing through flat, so a pair never collapses
@@ -1418,7 +1420,8 @@ const SHAPES = [
     }
   },
   {
-    id: 'harm', label: 'Harmonograph', glow: '#ffc440', ink: '#ffe8bb',
+    id: 'harm', twistLabel: 'MORPH SPEED',
+    twistHelp: 'How fast the figure walks through its phase family', label: 'Harmonograph', glow: '#ffc440', ink: '#ffe8bb',
     glyph: 'bar', half: { len: 8, thick: 3 },
     lanes: [{ id: 'main', label: 'Main' }, { id: 'mirror', label: 'Mirrored' }],
     mirrors: ['none'],
@@ -1445,7 +1448,8 @@ const SHAPES = [
     }
   },
   {
-    id: 'swag', label: 'Swag', glow: '#e85fa0', ink: '#ffd6e8',
+    id: 'swag', twistLabel: 'SWING SPEED',
+    twistHelp: 'How fast the rope swings on its pivot', label: 'Swag', glow: '#e85fa0', ink: '#ffd6e8',
     glyph: 'dot', half: { len: 6, thick: 4 },
     lanes: [{ id: 'a', label: 'Voice A' }, { id: 'b', label: 'Voice B' }],
     mirrors: ['none'],
@@ -1483,7 +1487,8 @@ const SHAPES = [
     }
   },
   {
-    id: 'ridge', label: 'Ridges', glow: '#7ddc5e', ink: '#d6ffc8',
+    id: 'ridge', twistLabel: 'DRIFT SPEED',
+    twistHelp: 'How fast the rows drift. The front row always moves fastest', label: 'Ridges', glow: '#7ddc5e', ink: '#d6ffc8',
     glyph: 'dot', half: { len: 6, thick: 4 },
     // One row per voice, back to front. Same row idiom as Grass and Clouds,
     // laid out as a landscape — three voices become three depths.
@@ -3026,9 +3031,9 @@ function buildShapeSections() {
           </select>
         </div>` : ''}
         ${hasTwist ? `
-        <div class="col-span-2"><span class="lbl text-violet-300">TWIST SPEED <span class="text-gray-300 font-mono" id="ro-twist-${s.id}">${s.twistSpeed}</span></span>
+        <div class="col-span-2"><span class="lbl text-violet-300">${s.twistLabel || 'TWIST SPEED'} <span class="text-gray-300 font-mono" id="ro-twist-${s.id}">${s.twistSpeed}</span></span>
           <input type="range" data-cfg="shape.${s.id}.twistSpeed" data-readout="ro-twist-${s.id}" data-snap-mid="0" min="-4" max="4" step="0.1" value="${s.twistSpeed}"
-            title="How fast the whole pattern turns as the song plays — 0 stops it, negative reverses direction"></div>` : ''}
+            title="${s.twistHelp || 'How fast the whole pattern turns as the song plays'} — 0 stops it, negative reverses direction"></div>` : ''}
         ${s.id === 'dna' ? `
         <div class="col-span-2"><span class="lbl text-violet-300">HELIX MODE</span>
           <select data-cfg="shape.${s.id}.helixMode">
