@@ -343,6 +343,12 @@ Beyond those numbers:
   over half of routed paths), not tuned directly.
 - 2–9 paths per preset, median 5. Favourites: DNA, Purple Arcs, Ladders,
   Spiral, Clouds, Spiral Staircase. Green Center Ring has never been used.
+- **Seven of those eight are columns or centred rosettes.** Sine was the only
+  path crossing the stage, which is why he kept reaching for it. Standing
+  Wave, Harmonograph, Swag and Ridges were added to fill that gap, and all
+  four — plus Sine — steer their motion from the existing TWIST SPEED rather
+  than a new control, because declaring `twistSpeed` is what makes the panel
+  generator emit that slider.
 - Synth muted in 31 of 35 — he always scores to a real recording.
 - New features default to **off**, so no existing preset changes appearance.
 
@@ -373,6 +379,16 @@ alignment that was fine. Confirm against per-note measurement before acting.
 **Silent windows flatter the stats.** `check_alignment.py` skips windows where
 one side is silent, so an 89-second hole scored well on Mozart. Always check
 note distribution and gaps too.
+
+**Sizing a lateral path off `g.H`.** Amplitude as a fraction of stage
+*height* is fine for a column and wrong for anything that crosses the stage:
+in a 9:16 frame the path swings further than the stage is wide and reads as a
+vertical zigzag. Use `Math.min(g.W, g.H)`. Anything that rotates needs two
+more guards — cap the drop against the width, and floor the pivot against the
+lift the swing itself produces — or it leaves the top of a 21:9 stage and the
+sides of a tall one. Check every new geometry at 16:9, 9:16, 1:1 and 21:9
+before calling it done; `place()` is pure, so sampling it over a few seconds
+of motion in each frame is a dozen lines and catches all of this.
 
 **`populateTrackSelects()` round-robins.** When nothing is routed it assigns
 every path a track. Sensible on a fresh MIDI load, surprising after Reset,
