@@ -1628,6 +1628,8 @@ function defaultConfig(flavour) {
       revAmt: 0, revBass: true, bloomAmt: 0, bloomSustain: false, fireworkAmt: 0,
       noteShape: 'line', vibAmt: 0, vibRate: 5,
       chordBoost: 0, chordLink: 0, chordWin: 80,
+      pathLight: 0, pathLightMode: 'wake',
+      wakeSpread: 0.08, wakeDecay: 1.2, fullWindow: 10,
       petalAmt: 0, petalFall: 55,
       lanes: s.lanes.map((ln, i) => ({ on: true, track: 'shared', dir: 'forward', noteShape: 'shared', revAmt: 'shared',
         color: (s.laneColors && s.laneColors[i]) || s.glow, ink: s.ink }))
@@ -2618,6 +2620,7 @@ function scan(s, t) {
 }
 
 const scanners = new Map();   // "shapeId:laneIdx" -> {scanner, srcIndex}
+const plReach = new Map();    // PATH LIGHT: track+range -> bins the piece reaches
 function resolveTrack(sid, li) {
   const sc = cfg.shapes[sid];
   const v = sc.lanes[li].track === 'shared' ? sc.track : sc.lanes[li].track;
@@ -2639,7 +2642,7 @@ function getScanner(sid, li, t) {
   return e.scanner;
 }
 function getActive(sid, li, t) { return getScanner(sid, li, t).active; }
-function resetScanners() { scanners.clear(); }
+function resetScanners() { scanners.clear(); plReach.clear(); }
 
 /* Same scanner cache, keyed directly by track index instead of a shape/
    lane pair — used by the Equalizer and Voice Circle, which read a
@@ -3206,6 +3209,25 @@ function buildShapeSections() {
           <input type="range" data-cfg="shape.${s.id}.revAmt" data-readout="ro-revAmt-${s.id}" data-snap-mid="0" min="0" max="2" step="0.01" value="0"
             title="Decaying echoes back along this shape's path"></div>
         ${laneRevOverrides}
+        <div class="col-span-2"><span class="lbl text-rose-300">PATH LIGHT <span class="text-gray-300 font-mono" id="ro-pathLight-${s.id}">0</span></span>
+          <input type="range" data-cfg="shape.${s.id}.pathLight" data-readout="ro-pathLight-${s.id}" data-snap-mid="0" min="0" max="1" step="0.01" value="0"
+            title="Lights the PATH itself where the music has been — not copies of notes, the way PATH REVERB does"></div>
+        <div class="col-span-2"><span class="lbl text-rose-300">PATH LIGHT &mdash; WHAT DRIVES IT</span>
+          <select data-cfg="shape.${s.id}.pathLightMode">
+            <option value="wake" selected>Wake &mdash; glows where notes just were, then fades</option>
+            <option value="full">Completion &mdash; whole shape, once the music has covered it</option>
+            <option value="both">Both</option>
+          </select>
+        </div>
+        <div><span class="lbl text-rose-300">WAKE SPREAD <span class="text-gray-300 font-mono" id="ro-wakeSpread-${s.id}">0.08</span></span>
+          <input type="range" data-cfg="shape.${s.id}.wakeSpread" data-readout="ro-wakeSpread-${s.id}" min="0.01" max="0.4" step="0.01" value="0.08"
+            title="How far along the path a note's glow reaches"></div>
+        <div><span class="lbl text-rose-300">WAKE DECAY <span class="text-gray-300 font-mono" id="ro-wakeDecay-${s.id}">1.2</span></span>
+          <input type="range" data-cfg="shape.${s.id}.wakeDecay" data-readout="ro-wakeDecay-${s.id}" min="0.1" max="6" step="0.1" value="1.2"
+            title="Seconds for a note's glow to fade out of the path"></div>
+        <div class="col-span-2"><span class="lbl text-rose-300">COMPLETION WINDOW <span class="text-gray-300 font-mono" id="ro-fullWindow-${s.id}">10</span></span>
+          <input type="range" data-cfg="shape.${s.id}.fullWindow" data-readout="ro-fullWindow-${s.id}" min="1" max="30" step="0.5" value="10"
+            title="How long the music has to cover the whole path in. Shorter = the full shape appears more rarely"></div>
         <div class="col-span-2"><span class="lbl text-sky-400">REVERB BLOOM</span>
           <input type="range" data-cfg="shape.${s.id}.bloomAmt" data-snap-mid="0" min="0" max="1" step="0.01" value="0"
             title="Expanding ring that radiates outward and fades — triggers on note ATTACK"></div>
@@ -3986,6 +4008,8 @@ function applyControl(node) {
         key === 'windDirA' || key === 'windDirB' || key === 'straighten' || key === 'gather' ||
         key === 'rayCount' || key === 'raySpan' || key === 'modes' ||
         key === 'chordBoost' || key === 'chordLink' || key === 'chordWin' ||
+        key === 'pathLight' || key === 'wakeSpread' || key === 'wakeDecay' ||
+        key === 'fullWindow' ||
         key === 'petalAmt' || key === 'petalFall') v = parseFloat(raw);
     cfg.shapes[sid][key] = v;
     // keep the live SHAPES object in sync so renderShapes() sees the new color
@@ -5041,6 +5065,182 @@ function applyVibrato(p, sc, t, seed) {
 }
 
 /* ============================================================
+   PATH LIGHT  —  the path itself reacting, not more copies of notes
+
+   PATH REVERB emits copies of NOTES back along the curve, so the curve is
+   never what lights up. That gives two settings and nothing between them:
+   low shows a few ghost notes, high leaves the whole path permanently lit.
+   This lights the curve directly, as its own layer, so it can be mostly
+   absent and occasionally complete.
+
+   Two rules share the layer:
+
+     WAKE        brightness falls off with distance from a recent note and
+                 with that note's age. A held note lights one spot, a run
+                 lights an arc, a sweep across the register briefly draws
+                 the whole shape.
+
+     COMPLETION  brightness comes from how much of the path the music has
+                 visited inside a trailing window. Curved hard, so below
+                 about three quarters covered nothing shows and the last
+                 bin filling snaps the whole shape into view. On the heart
+                 that means the heart appears when a phrase has spanned the
+                 register, and nobody can work out the rule from watching.
+
+   Both are computed FROM t every frame and accumulate nothing, which is the
+   rule the Scene Timeline is built on too — Kenneth scrubs constantly and
+   re-records takes, and anything stateful desyncs the moment he drags
+   backwards. Coverage is therefore a trailing window, never a latched flash.
+   ============================================================ */
+
+/* Notes whose attack falls in [t - back, t]. Binary search over the track's
+   own sorted array, so this is pure: same t, same answer, forwards or back. */
+function notesBack(scanner, t, back) {
+  const ns = scanner.notes;
+  if (!ns || !ns.length) return null;
+  const target = t - back;
+  let lo = 0, hi = ns.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (ns[m].time < target) lo = m + 1; else hi = m; }
+  let end = lo;
+  while (end < ns.length && ns[end].time <= t) end++;
+  return lo < end ? { from: lo, to: end, ns } : null;
+}
+
+/* A note's position along the path, the same mapping renderShapes uses —
+   LOCKED overrides BASE/SPREAD, and a backward lane runs the curve the
+   other way, so the light has to agree with where the note is drawn. */
+function noteParam(n, sc, lane) {
+  let base = sc.base, spread = sc.spread;
+  if (cfg.mode === 'locked') { base = cfg.lockLow; spread = Math.max(1, cfg.lockHigh - cfg.lockLow); }
+  let tt = (n.pitch - base) / spread;
+  tt = tt < 0 ? 0 : tt > 1 ? 1 : tt;
+  return lane.dir === 'backward' ? 1 - tt : tt;
+}
+
+const PL_SEGS = 110;         // samples along the path; enough to read as a line
+// 8 bins, not 20. At 20 a bin is under two semitones of a locked range and a
+// melody simply skips most of them — measured on the Allemande, coverage
+// topped out at 0.55 and the full shape could never fire at all.
+const PL_BINS = 8;
+
+/* Which bins the piece EVER reaches. Coverage has to be measured against
+   this, not against the nominal pitch range: LOCKED spans whatever Kenneth
+   set, usually wider than the music, so the outer bins are unreachable and
+   "covered the whole path" would be asking for something that never happens.
+   Derived from the track's own notes, so it is still pure — the same t gives
+   the same answer, and scrubbing backwards changes nothing. */
+function reachableBins(src, sc, lane) {
+  const locked = cfg.mode === 'locked';
+  const base = locked ? cfg.lockLow : sc.base;
+  const spread = locked ? Math.max(1, cfg.lockHigh - cfg.lockLow) : sc.spread;
+  const key = src + '|' + base + '|' + spread;
+  let v = plReach.get(key);
+  if (v !== undefined) return v;
+  const ns = normTracks[src] || [];
+  let mask = 0, n = 0;
+  for (let i = 0; i < ns.length; i++) {
+    let tt = (ns[i].pitch - base) / spread;
+    tt = tt < 0 ? 0 : tt > 1 ? 1 : tt;
+    const b = Math.min(PL_BINS - 1, Math.floor(tt * PL_BINS));
+    if (!(mask & (1 << b))) { mask |= (1 << b); n++; }
+  }
+  v = Math.max(1, n);
+  if (plReach.size > 128) plReach.clear();
+  plReach.set(key, v);
+  return v;
+}
+
+function emitPathLight(s, sc, t, geo, glowAmt) {
+  const amt = sc.pathLight || 0;
+  if (amt <= 0.004) return;
+  const mode = sc.pathLightMode || 'wake';
+  const wantWake = mode !== 'full', wantFull = mode !== 'wake';
+  const spread = Math.max(0.005, sc.wakeSpread != null ? sc.wakeSpread : 0.08);
+  const decay = Math.max(0.05, sc.wakeDecay != null ? sc.wakeDecay : 1.2);
+  const win = Math.max(0.5, sc.fullWindow != null ? sc.fullWindow : 6);
+  const closed = !!s.closed;
+
+  // One light per distinct TRACK, not per lane. With a Solo layout every
+  // lane points at the same track, and drawing it once per lane would stack
+  // four identical copies and quadruple the brightness — the same mistake
+  // chordGroups made before it deduped.
+  const drawn = [];
+  for (let li = 0; li < s.lanes.length; li++) {
+    const lane = sc.lanes[li];
+    if (!lane.on) continue;
+    const src = resolveTrack(s.id, li);
+    if (src < 0 || drawn.indexOf(src) >= 0) continue;
+    drawn.push(src);
+
+    const sn = getScanner(s.id, li, t);
+    const look = Math.max(wantWake ? decay * 3 : 0, wantFull ? win : 0);
+    const w = notesBack(sn, t, look);
+    if (!w) continue;
+
+    // COMPLETION: what fraction of the path has been visited lately
+    let full = 0;
+    if (wantFull) {
+      // Visited or not, deliberately. Weighting each bin by how recently it
+      // was hit fades more prettily but makes full coverage unreachable --
+      // it would need every bin struck on the same frame -- and the whole
+      // point is that the shape does occasionally complete.
+      let mask = 0, hit = 0;
+      for (let i = w.from; i < w.to; i++) {
+        if (t - w.ns[i].time > win) continue;
+        const b = Math.min(PL_BINS - 1, Math.floor(noteParam(w.ns[i], sc, lane) * PL_BINS));
+        const bit = 1 << b;
+        if (!(mask & bit)) { mask |= bit; hit++; }
+      }
+      const frac = hit / reachableBins(src, sc, lane);
+      // From three quarters of where the piece ever goes, to all of it.
+      // Measured over the Allemande at the default 10 s window: absent 87%
+      // of the piece, a dimmer outline 12%, the complete shape 1.1% — a
+      // handful of moments, which is the "occasionally" that was asked for.
+      // A longer window makes it more frequent; that is what the slider does.
+      const k = (frac - 0.75) / 0.25;
+      full = k <= 0 ? 0 : k >= 1 ? 1 : k * k * (3 - 2 * k);
+    }
+
+    const col = rgb(lane.color || sc.glow || s.glow);
+    const baseTh = Math.max(0.7, (s.half.thick || 4) * cfg.thick * (sc.thickScale != null ? sc.thickScale : 1) * 1.1);
+    let prev = null;
+    for (let i = 0; i <= PL_SEGS; i++) {
+      const u = i / PL_SEGS;
+      const p = placeAt(s, u, li, geo, sc);
+      if (prev) {
+        const um = (u - 0.5 / PL_SEGS);
+        let lit = full;
+        if (wantWake) {
+          for (let j = w.from; j < w.to; j++) {
+            const age = t - w.ns[j].time;
+            if (age > decay * 3) continue;
+            let d = Math.abs(um - noteParam(w.ns[j], sc, lane));
+            // a closed curve wraps, so the short way round is the real distance
+            if (closed && d > 0.5) d = 1 - d;
+            const v = Math.exp(-d / spread) * Math.exp(-age / decay);
+            if (v > lit) lit = v;
+          }
+        }
+        if (lit > 0.02) {
+          const dx = p.x - prev.x, dy = p.y - prev.y;
+          const len = Math.hypot(dx, dy);
+          // a segment longer than the stage is the curve jumping (an open
+          // path wrapping from end to start) — never bridge that gap
+          if (len < Math.max(geo.W, geo.H) * 0.5) {
+            const a = Math.min(1, lit * amt) * glowAmt;
+            push((p.x + prev.x) * 0.5, (p.y + prev.y) * 0.5,
+                 len * 0.5 + baseTh * 0.5, baseTh * (0.45 + 0.55 * lit),
+                 Math.atan2(dy, dx), 1, 1, 0,
+                 col[0], col[1], col[2], a, 1, 0, 0);
+          }
+        }
+      }
+      prev = p;
+    }
+  }
+}
+
+/* ============================================================
    PATH REVERB
    Echoes are decaying copies of the glyph placed BACK along the
    shape's own path, so a note smears in the direction it travels.
@@ -5450,6 +5650,8 @@ function renderShapes(t, frameDt) {
     const chordBoost = sc.chordBoost || 0, chordLink = sc.chordLink || 0;
     const chords = (chordBoost > 0.001 || chordLink > 0.001) ? chordGroups(s, sc, t) : null;
     const linkPts = chordLink > 0.001 && chords ? new Map() : null;
+    // under the notes, so a lit path reads as the surface they travel on
+    emitPathLight(s, sc, t, geo, glowAmt);
 
     for (let li = 0; li < s.lanes.length; li++) {
       const lane = sc.lanes[li];
