@@ -1968,6 +1968,34 @@ const bpCanvas = document.createElement('canvas');
 const bpCtx = bpCanvas.getContext('2d');
 let bpDirty = true, previewDirty = true;
 function invalidateBlueprint() { bpDirty = true; previewDirty = true; }
+
+/* The blueprint is a cached canvas, redrawn only when something invalidates
+   it — which is right for 21 static paths and wrong for every path that
+   moves. A guide frozen under a drifting wave is worse than no guide: the
+   note rides the real curve while the line stays put, so the motion reads as
+   the note bouncing against a fixed wave rather than the wave travelling.
+
+   So: retrace while a moving path is actually visible, and only then. Paused
+   counts as not moving (the twist is a function of playback time, so a held
+   playhead draws the same frame), which keeps scrubbing and editing as cheap
+   as they were. */
+let bpTracedAt = null;
+function movingPathVisible() {
+  for (let i = 0; i < SHAPES.length; i++) {
+    const s = SHAPES[i];
+    if (s.twistSpeed === undefined) continue;
+    const sc = cfg.shapes[s.id];
+    if (!sc || !sc.twistSpeed) continue;
+    if (sc.lanes.some(l => l.on)) return true;
+  }
+  return false;
+}
+function refreshMovingBlueprint() {
+  if (!movingPathVisible()) return;
+  if (bpTracedAt === currentPlaybackTime) return;
+  bpTracedAt = currentPlaybackTime;
+  bpDirty = true; previewDirty = true;
+}
 function ensureBlueprintCache() {
   const pw = Math.round(W * DPR), ph = Math.round(H * DPR);
   if (!bpDirty && bpCanvas.width === pw) return;
@@ -5758,9 +5786,9 @@ function animate(now) {
     if (bgMode !== 'transparent') { ensureBgCache(); blit(bgTex, true, false); }
   }
 
-  if (cfg.bp) { ensureBlueprintCache(); blit(bpTex, true, false); }
+  if (cfg.bp) { refreshMovingBlueprint(); ensureBlueprintCache(); blit(bpTex, true, false); }
   else if (pathPreviewOn && activeShapeId && routingSect.style.display !== 'none' && uiLayer.style.display !== 'none') {
-    ensurePreviewCache(); blit(previewTex, true, false);
+    refreshMovingBlueprint(); ensurePreviewCache(); blit(previewTex, true, false);
   }
   // at 0 this is the plain additive blit it has always been — the halo pass
   // is only wired in once you ask for it
