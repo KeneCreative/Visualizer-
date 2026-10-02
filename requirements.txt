@@ -1,0 +1,13 @@
+# Only the offline pipeline needs these. index.html needs NOTHING installed —
+# its libraries are vendored under vendor/ so the app runs offline.
+#
+#   python -m pip install -r requirements.txt
+#
+# Python 3.14 on the main machine; anything 3.10+ should be fine.
+# Versions are the ones every alignment in midi/aligned/ was produced with.
+
+librosa==1.0.0
+pretty_midi==0.2.11.post0
+soundfile==0.14.0
+numpy==2.5.2
+scipy==1.18.0
