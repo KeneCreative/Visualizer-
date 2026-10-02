@@ -17,12 +17,30 @@ Everything else in the repo is data.
 ## Running it
 
 ```bash
-./"Start Visualizer.bat"
+./"Start Visualizer.bat"      # Windows
+./start-visualizer.command    # macOS — double-click it in Finder
 ```
 
-Double-clickable. Serves the folder on `http://localhost:8000/` and opens a
-browser once the port answers. The console window it opens **is** the server —
-closing it stops it.
+Double-clickable on either. Both serve the folder on `http://localhost:8000/`
+and open a browser once the port answers. The console window it opens **is**
+the server — closing it stops it.
+
+The two are twins, deliberately: a port check so a second launch reopens the
+browser instead of failing, a background waiter so the browser does not race
+the server, and `--bind 127.0.0.1` so neither OS asks about incoming
+connections. The Mac one uses `python3` (macOS has not shipped a `python`
+since Catalina) and `lsof` (its `netstat` has no `-p`), and must be a
+`.command` — Finder opens a `.sh` in a text editor instead of running it.
+`.gitattributes` pins both it and any `.sh` to LF, because a shell script
+checked out with CRLF dies as `bad interpreter: /bin/bash^M`.
+
+**Working across two machines.** A clone is ~3 MB and carries the app, every
+aligned and source MIDI, every preset and the vendored libraries — everything
+but `audio/` (git-ignored, 1.4 GB) and `energy/` (derived; regenerate with
+`pipeline/extract_rms.py` once the recording is local). Design work — shapes,
+routing, colours, presets — needs no recording at all. `requirements.txt`
+pins the pipeline versions every alignment in `midi/aligned/` was made with;
+`index.html` itself needs nothing installed.
 
 It must be served over http, not opened as a file. The dropdowns that list
 `midi/aligned/`, `energy/`, `presets/` and `audio/` work by parsing the
