@@ -1119,11 +1119,16 @@ const SHAPES = [
     k: 5, fill: 0.42,
     place(t, li, g) {
       const R = g.core * this.fill;
-      return mirroredLane('rose', t, li, g, tt => {
-        const th = tt * TAU;
+      // through param(), like every other curve here. Without it place()
+      // returned no angle at all, and a bar-family NOTE SHAPE on this path
+      // was pushed with rot === undefined — NaN in the vertex shader, so the
+      // quad was silently discarded and the notes simply did not draw. The
+      // Quartet ensemble routes this path with 'line', so it was hitting it.
+      return mirroredLane('rose', t, li, g, tt => param(u => {
+        const th = u * TAU;
         const r = R * Math.cos(this.k * th);
         return { x: g.CX + r * Math.cos(th), y: g.CY + r * Math.sin(th) };
-      });
+      }, tt));
     }
   },
   {
@@ -4993,10 +4998,114 @@ let shakeAmt = 0;
 function triggerShake(strength) { shakeAmt = Math.min(40, shakeAmt + strength); }
 
 
+/* ------------------------------------------------------------
+   BENT BAR
+
+   A long bar glyph is ONE straight quad drawn at the path's tangent, so on a
+   curving path it reads as a chord across the arc instead of a piece of it —
+   the note visibly cuts the corner off a spiral or a heart, which is the
+   recurring "why don't the lines follow the curve" problem. This redraws it
+   as a short chain of capsules placed with the shape's own place(), the same
+   way emitTaper already walks the curve.
+
+   It declines to bend, rather than bending wrongly, in three cases — so
+   nothing that looks right today changes:
+
+     - the glyph's angle is not the path tangent. A Ladder rung lies ACROSS
+       its path and a Sun ray radiates from it; comparing the angle to the
+       local tangent catches both without naming a single shape.
+     - the arc barely departs from the straight quad (under 0.8px). That is
+       every straight path and every short glyph, so this costs nothing on
+       the Diagonals, the Ladders or the Crucifix.
+     - an open path where the glyph would overrun either end.
+
+   The angle test reads placeAt()'s own angle rather than the point handed in,
+   because vibrato displaces a note sideways without changing its angle and
+   the caller may pass an already-mirrored copy. Whatever displacement the
+   caller did apply is measured once and carried onto every sample, so a
+   vibrating note still bends.
+   ------------------------------------------------------------ */
+function emitBentBar(shape, li, tt, sc, p, hx, hy, form, soft, ic, gc, alpha, glowAmt, reflect) {
+  if (!(hx > 9) || li == null || tt == null) return false;
+  const closed = !!shape.closed;
+  const fix = u => closed ? ((u % 1) + 1) % 1 : u;
+  const E = 0.0015;
+  const a0 = placeAt(shape, fix(tt - E), li, geo, sc);
+  const a1 = placeAt(shape, fix(tt + E), li, geo, sc);
+  const rate = Math.hypot(a1.x - a0.x, a1.y - a0.y) / (2 * E);   // px per unit of path parameter
+  if (!(rate > 1)) return false;
+
+  const mid = placeAt(shape, fix(tt), li, geo, sc);
+  if (mid.angle === undefined) return false;
+  const tang = Math.atan2(a1.y - a0.y, a1.x - a0.x);
+  const d = Math.abs(((mid.angle - tang + Math.PI * 3) % TAU) - Math.PI);
+  const fwd = d < 0.3, rev = Math.abs(d - Math.PI) < 0.3;
+  if (!fwd && !rev) return false;             // glyph doesn't lie along the path
+
+  const half = hx / rate;
+  if (!(half > 1e-5)) return false;
+  if (!closed && (tt - half < 0.001 || tt + half > 0.999)) return false;
+
+  const eA = placeAt(shape, fix(tt - half), li, geo, sc);
+  const eB = placeAt(shape, fix(tt + half), li, geo, sc);
+  // how far the real arc departs from the straight quad this replaces
+  if (Math.hypot(mid.x - (eA.x + eB.x) / 2, mid.y - (eA.y + eB.y) / 2) < 0.8) return false;
+
+  // whatever the caller displaced the note by (vibrato), minus any mirroring,
+  // which is reapplied per sample below
+  const base = reflect ? mirrorPlacement(reflect, mid, geo) : mid;
+  const ddx = base ? p.x - base.x : 0, ddy = base ? p.y - base.y : 0;
+
+  const headSign = fwd ? 1 : -1;              // which way along t the glyph's +x points
+  const segs = Math.max(4, Math.min(20, Math.round(hx / 5)));
+  // The capsules ABUT; they do not overrun each other the way emitTaper's do.
+  // Overrunning fuses a soft tail nicely, but on a crisp glyph the overshooting
+  // ends shoot off tangentially at every bend — measured on the heart, an
+  // overrunning chain sat 81px from the curve against the straight quad's 35px,
+  // i.e. worse than the bug it was meant to fix. Abutting caps tile exactly and
+  // land ON the path, and a bar already has near-square ends (emitGlyph rounds
+  // them by at most 2px), so nothing is lost and the alpha needs no dividing.
+  let prev = null, prevU = 0;
+  for (let i = 0; i <= segs; i++) {
+    const u = i / segs;                       // 0 = tail end, 1 = head end
+    const q = placeAt(shape, fix(tt + headSign * (u * 2 - 1) * half), li, geo, sc);
+    const r = reflect ? mirrorPlacement(reflect, q, geo) : q;
+    if (!r) { prev = null; prevU = u; continue; }
+    const pt = { x: r.x + ddx, y: r.y + ddy };
+    if (prev) {
+      const um = (u + prevU) / 2;
+      let w = hy;
+      if (form === 4) w = hy * Math.sqrt(um);                           // comet: a point at the tail
+      else if (form === 5) w = hy * (1 - (2 * um - 1) * (2 * um - 1));  // blade: points at both ends
+      w = Math.max(0.4, w);
+      const dx = pt.x - prev.x, dy = pt.y - prev.y;
+      const dist = Math.max(0.4, Math.hypot(dx, dy));
+      const ang = Math.atan2(dy, dx);
+      const cx = (prev.x + pt.x) / 2, cy = (prev.y + pt.y) / 2;
+      const hxs = dist / 2;
+      const round = Math.min(hxs, Math.min(w * 0.5, 2.0));   // same end rounding a bar gets
+      if (glowAmt > 0.001) {
+        const gpad = 6.0 + 14.0 * glowAmt;
+        // the glow IS padded past its segment, so consecutive glows overlap;
+        // divide by how many cover a given point or a chain glows far hotter
+        // than the single quad it replaces
+        const cover = (dist + 0.7 * gpad) / dist;
+        push(cx, cy, hxs + gpad * 0.35, w + gpad * 0.35, ang, round, gpad, 0,
+             gc[0], gc[1], gc[2], (alpha * 0.5 * glowAmt) / cover, 1, 0, 0);
+      }
+      push(cx, cy, hxs, w, ang, round, soft, 0,
+           ic[0], ic[1], ic[2], alpha, 0, 0, 0);
+    }
+    prev = pt; prevU = u;
+  }
+  return true;
+}
+
 /* ============================================================
    GLYPH EMISSION  (pushes instances; no immediate drawing)
    ============================================================ */
-function emitGlyph(shape, p, lenS, thickS, ic, gc, alpha, glowAmt, sc, noteKey) {
+function emitGlyph(shape, p, lenS, thickS, ic, gc, alpha, glowAmt, sc, noteKey,
+                   bendLi, bendT, bendReflect) {
   const key = noteKey || (sc && sc.noteShape) || (shape.glyph === 'dot' ? 'circle' : 'line');
   const f   = NOTE_FORMS[key] || NOTE_FORMS.line;
   let hx, hy, round, ring = 0, form = f.form, n = f.n;
@@ -5035,6 +5144,13 @@ function emitGlyph(shape, p, lenS, thickS, ic, gc, alpha, glowAmt, sc, noteKey) 
   // sits at p) instead of centring it on p — so a ray starts at the sun's rim
   let px = p.x, py = p.y;
   if (p.grow) { px += Math.cos(p.angle) * hx; py += Math.sin(p.angle) * hx; }
+
+  // A bar long enough to show the path's curvature is drawn as a chain that
+  // follows it. 'grow' glyphs are excluded outright: a Sun ray is anchored at
+  // the rim and points away from the path, so there is no curve to follow.
+  if (f.kind === 'bar' && !p.grow && bendT != null &&
+      emitBentBar(shape, bendLi, bendT, sc, p, hx, hy, form, f.soft || 0.75,
+                  ic, gc, alpha, glowAmt, bendReflect)) return;
 
   if (glowAmt > 0.001) {
     const gpad = 6.0 + 14.0 * glowAmt;
@@ -5291,12 +5407,12 @@ function emitReverb(shape, li, tt, sc, lenS, thickS, ic, gc, life, glowAmt, refl
     const shrink = 1 - 0.045 * k;
     if (shrink <= 0.15) break;
     const p = placeAt(shape, et, li, geo, sc);
-    emitGlyph(shape, p, lenS * shrink, thickS * shrink, ic, gc, a, glowAmt * a, sc, noteKey);
+    emitGlyph(shape, p, lenS * shrink, thickS * shrink, ic, gc, a, glowAmt * a, sc, noteKey, li, et);
     // mirrored copy, so an 'lr'/'radial' mirrored track also gets its echo trail
     // (in its own MIRROR COLOR if one's set)
     if (reflectMode) {
       const m = mirrorPlacement(reflectMode, p, geo);
-      if (m) emitGlyph(shape, m, lenS * shrink, thickS * shrink, ic, mc, a, glowAmt * a, sc, noteKey);
+      if (m) emitGlyph(shape, m, lenS * shrink, thickS * shrink, ic, mc, a, glowAmt * a, sc, noteKey, li, et, reflectMode);
     }
   }
 }
@@ -5791,7 +5907,7 @@ function renderShapes(t, frameDt) {
 
         // taper first so the note head draws over it
         emitTaper(s, li, tt, sc, thickS, gc, life, dirSign, reflectMode, mgc, laneShapeKey);
-        if (drawHead) emitGlyph(s, p, lenS, thickS, ic, gc, life, ga, sc, laneShapeKey);
+        if (drawHead) emitGlyph(s, p, lenS, thickS, ic, gc, life, ga, sc, laneShapeKey, li, tt);
         emitReverb(s, li, tt, sc, lenS, thickS, ic, gc, life, glowAmt, reflectMode, mgc, laneDirSign, laneShapeKey);
 
         // Half Sun: a single Rays note fans a whole burst of spokes across
@@ -5818,12 +5934,12 @@ function renderShapes(t, frameDt) {
 
         if (sc.mirror === 'opp' && s.opp) {
           const o = s.opp(tt, li);
-          if (drawHead) emitGlyph(s, placeAt(s, o.t, o.lane, geo, sc), lenS, thickS, ic, mgc, life, ga, sc, laneShapeKey);
+          if (drawHead) emitGlyph(s, placeAt(s, o.t, o.lane, geo, sc), lenS, thickS, ic, mgc, life, ga, sc, laneShapeKey, o.lane, o.t);
           emitReverb(s, o.lane, o.t, sc, lenS, thickS, ic, mgc, life, glowAmt, null, null, laneDirSign, laneShapeKey);
           emitTaper(s, o.lane, o.t, sc, thickS, mgc, life, dirSign, null, laneShapeKey);
         } else if (reflectMode) {
           const m = mirrorPlacement(reflectMode, p, geo);
-          if (m && drawHead) emitGlyph(s, m, lenS, thickS, ic, mgc, life, ga, sc, laneShapeKey);
+          if (m && drawHead) emitGlyph(s, m, lenS, thickS, ic, mgc, life, ga, sc, laneShapeKey, li, tt, reflectMode);
         }
       }
     }
