@@ -5074,12 +5074,28 @@ function emitBentBar(shape, li, tt, sc, p, hx, hy, form, soft, ic, gc, alpha, gl
   const fwd = d < 0.3, rev = Math.abs(d - Math.PI) < 0.3;
   if (!fwd && !rev) return false;             // glyph doesn't lie along the path
 
-  const half = hx / rate;
+  let half = hx / rate;
   if (!(half > 1e-5)) return false;
-  if (!closed && (tt - half < 0.001 || tt + half > 0.999)) return false;
+  // Never span more than a third of the curve. Where a path's arc-length rate
+  // collapses — the Harmonograph's wound centre, a spiral's inner coil — a
+  // glyph can ask for more parameter than the whole figure has, and wrapping
+  // it round the figure would be worse than the bug.
+  half = Math.min(half, 0.33);
 
-  const eA = placeAt(shape, fix(tt - half), li, geo, sc);
-  const eB = placeAt(shape, fix(tt + half), li, geo, sc);
+  // Clamp to an open path's ends instead of giving up. Bailing out here drew
+  // a straight 210px bar across the Harmonograph's middle — measured 290px
+  // from the curve, i.e. precisely the artifact this function exists to
+  // remove, in the shape that needs it most. A note whose path has run out
+  // under it is simply drawn shorter, which is what the geometry means.
+  let u0 = tt - half, u1 = tt + half;
+  if (!closed) {
+    u0 = Math.max(0, u0);
+    u1 = Math.min(1, u1);
+    if (u1 - u0 < 1e-4) return false;
+  }
+
+  const eA = placeAt(shape, fix(u0), li, geo, sc);
+  const eB = placeAt(shape, fix(u1), li, geo, sc);
   // how far the real arc departs from the straight quad this replaces
   if (Math.hypot(mid.x - (eA.x + eB.x) / 2, mid.y - (eA.y + eB.y) / 2) < 0.8) return false;
 
@@ -5100,7 +5116,10 @@ function emitBentBar(shape, li, tt, sc, p, hx, hy, form, soft, ic, gc, alpha, gl
   let prev = null, prevU = 0;
   for (let i = 0; i <= segs; i++) {
     const u = i / segs;                       // 0 = tail end, 1 = head end
-    const q = placeAt(shape, fix(tt + headSign * (u * 2 - 1) * half), li, geo, sc);
+    // walk the CLAMPED span, so a glyph whose path ran out still follows what
+    // is left of it rather than falling back to a straight bar
+    const q = placeAt(shape, fix(headSign > 0 ? u0 + u * (u1 - u0)
+                                              : u1 - u * (u1 - u0)), li, geo, sc);
     const r = reflect ? mirrorPlacement(reflect, q, geo) : q;
     if (!r) { prev = null; prevU = u; continue; }
     const pt = { x: r.x + ddx, y: r.y + ddy };
