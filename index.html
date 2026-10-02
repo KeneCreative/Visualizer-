@@ -2689,39 +2689,7 @@ function applySynthMute() {
   if (synthBus) synthBus.gain.rampTo(synthShouldMute() ? 0 : 1, 0.1);
 }
 
-/* Tone defaults to latencyHint "interactive", which asks the browser for the
-   SMALLEST possible output buffer — on a Mac typically 128–256 frames, a ~3 ms
-   deadline with no reservoir. Every audio callback has to finish inside that,
-   so one stall from the renderer is instantly audible. On a desktop GPU there
-   is always slack; on a laptop there is not, and the result is crackling and
-   dropouts that recover on their own while the picture stays smooth. That
-   asymmetry is the whole story: the renderer has 16.7 ms and degrades
-   invisibly to 40 fps, the audio thread has 3 ms and degrades audibly.
-
-   A number rather than 'playback'. 'playback' lets the browser choose, and it
-   can pick ~85 ms — five frames, which reads as the picture leading the sound.
-   30 ms is ten times the headroom of the default and under two frames, so it
-   needs no compensating with VISUAL OFFSET.
-
-   Once only: replacing the context later would orphan every node already
-   built, including the decoded backing track. */
-let audioCtxTuned = false;
-function tuneAudioContext() {
-  if (audioCtxTuned) return;
-  audioCtxTuned = true;
-  try {
-    if (Tone.Context && Tone.setContext) {
-      Tone.setContext(new Tone.Context({ latencyHint: 0.03 }));
-    }
-  } catch (e) {
-    // an older Tone, or a browser that refuses the hint — the default context
-    // still works, it is just the tight one, so this must never be fatal
-    console.warn('audio latency hint not applied:', e);
-  }
-}
-
 async function buildAudio() {
-  tuneAudioContext();
   await Tone.start();
   disposeAudio();
   masterVol = new Tone.Volume(cfg.vol).toDestination();
