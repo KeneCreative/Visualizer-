@@ -4717,13 +4717,80 @@ function emitTaper(shape, li, tt, sc, thickS, gc, life, dirSign, reflectMode, mg
   // in a few long straight hops, which read as sharp corners. More, shorter
   // segments make the tail actually wrap around the curve.
   let   segs    = Math.round(5 + 30 * norm);
-  const stepMag = 0.0022 + 0.0090 * norm;
+  // The step is PIXELS converted to path parameter, not a fixed parameter
+  // step. A fixed one makes the tail's real length scale with however fast
+  // the curve is moving at that point, and on the Fibonacci spiral the rate
+  // runs 125 at the tight inner end to 2324 at the outer — so one TAIL
+  // LENGTH setting drew 15px of tail on the inside and 198px on the outside.
+  // Same slider, thirteen times the tail. The heart never showed it because
+  // its rate barely varies, which is why this hid for so long.
+  const E = 0.0015;
+  const wrap = u => shape.closed ? ((u % 1) + 1) % 1 : Math.max(0, Math.min(1, u));
+  const rA = placeAt(shape, wrap(tt - E), li, geo, sc);
+  const rB = placeAt(shape, wrap(tt + E), li, geo, sc);
+  const rate = Math.hypot(rB.x - rA.x, rB.y - rA.y) / (2 * E);
+  // the px-per-step these constants used to produce on a typical curve, so a
+  // saved preset's TAIL LENGTH still means roughly what it always did
+  const stepPx = 1.3 + 5.4 * norm;
+  const fallback = 0.0022 + 0.0090 * norm;
+  // clamped: at a cusp the rate collapses toward zero and the step would run
+  // away round the whole figure
+  // MAXSTEP bounds a single step. Measured: 0.05 is worse, not better. A
+  // looser clamp lets the walk take bigger parameter steps on the spiral's
+  // slow inner coils, which then runs off the end of the open path sooner
+  // and leaves a SHORTER tail (spread 5.6 -> 7.3), while on a closed loop the
+  // larger initial step trips the wrap guard below and shortens it unevenly
+  // (Clouds 1.06 -> 1.98). 0.02 it is.
+  const MAXSTEP = 0.02;
+  let stepMag = Math.min(MAXSTEP, rate > 1 ? stepPx / rate : fallback);
+  // One refinement pass, because the rate is sampled at the NOTE while the
+  // tail spans a stretch the curve may be accelerating through — on the
+  // spiral that alone still left a 1.7x drift between inner and outer. Re-read
+  // the rate at the tail's far end and average the two.
+  if (rate > 1) {
+    const far = tt - stepMag * segs * dirSign;
+    const fA = placeAt(shape, wrap(far - E), li, geo, sc);
+    const fB = placeAt(shape, wrap(far + E), li, geo, sc);
+    const rFar = Math.hypot(fB.x - fA.x, fB.y - fA.y) / (2 * E);
+    if (rFar > 1) stepMag = Math.min(MAXSTEP, stepPx / ((rate + rFar) * 0.5));
+  }
   // A long tail on a small closed loop (a cloud puff, the green ring) used to
   // run most of the way round the loop and cross back over itself and the
   // note head. Cap the parameter span it can cover at just under a third of
   // the loop so it can never meet itself.
   if (shape.closed) segs = Math.min(segs, Math.max(2, Math.floor(0.30 / stepMag)));
-  const step = stepMag * dirSign;
+
+  // Walk the path ONCE, adapting each step from how far the previous one
+  // actually moved, so every sample sits stepPx further along the CURVE than
+  // the last. Deriving one step size from the rate at the note is not enough
+  // where the curve changes speed under the tail: on the Fibonacci that still
+  // left the tail five times longer at the outer end than the inner at TAIL 6,
+  // and 37% of the routed paths across the presets sit above TAIL 2.
+  //
+  // The points are kept and the draw loops read them, so this costs no more
+  // place() calls than the fixed-step version it replaces.
+  const walk = new Array(segs + 1);
+  {
+    let et = tt, mag = stepMag;
+    let q = placeAt(shape, wrap(tt), li, geo, sc);
+    walk[0] = { t: tt, x: q.x, y: q.y, ok: true };
+    for (let k = 1; k <= segs; k++) {
+      et -= mag * dirSign;
+      let w = et;
+      if (shape.closed) w = ((w % 1) + 1) % 1;
+      else if (w < 0 || w > 1) { walk[k] = { ok: false }; continue; }
+      const r = placeAt(shape, w, li, geo, sc);
+      const d = Math.hypot(r.x - q.x, r.y - q.y);
+      walk[k] = { t: w, x: r.x, y: r.y, ok: true };
+      // bounded feedback, so a cusp cannot stall the walk and a jump cannot
+      // make it bolt round the figure
+      if (d > 0.01) {
+        mag = Math.max(1e-5, Math.min(MAXSTEP,
+              mag * Math.max(0.4, Math.min(2.5, stepPx / d))));
+      }
+      q = r;
+    }
+  }
   // Matches emitGlyph's own head-size formula exactly (including the same
   // 1.9x that dot/circle-kind glyphs use) so the tail is always proportional
   // to however thick the actual note head is currently rendering, whatever
@@ -4738,10 +4805,9 @@ function emitTaper(shape, li, tt, sc, thickS, gc, life, dirSign, reflectMode, mg
   if (style === 'dots') {
     for (let k = 1; k <= segs; k++) {
       const f = 1 - k / (segs + 1);
-      let et = tt - step * k;
-      if (shape.closed) et = ((et % 1) + 1) % 1;
-      else if (et < 0 || et > 1) continue;
-      const p = placeAt(shape, et, li, geo, sc);
+      const w = walk[k];
+      if (!w || !w.ok) continue;
+      const p = w;
       const R = Math.max(0.6, baseR * f * 0.9);
       const a = life * f * f * 0.9;
       push(p.x, p.y, R, R, 0, R, R * 0.8, 0, gc[0], gc[1], gc[2], a, 1, 0, 0);
@@ -4765,11 +4831,11 @@ function emitTaper(shape, li, tt, sc, thickS, gc, life, dirSign, reflectMode, mg
   for (let k = 0; k <= segs; k++) {
     let f = 1 - k / (segs + 1);              // 1 -> 0 taper
     if (style === 'comet') f *= f;           // front-loaded
-    let et = tt - step * k;
-    if (shape.closed) et = ((et % 1) + 1) % 1;
-    else if (et < 0 || et > 1) { prevOK = false; continue; }  // open path: don't connect across the end
+    const w = walk[k];
+    // open path: don't connect across the end
+    if (!w || !w.ok) { prevOK = false; continue; }
 
-    const p = placeAt(shape, et, li, geo, sc);
+    const p = w;
     const gap = dashed && (k % 2 === 0);
     if (prevOK && !gap) {
       const midF = (f + prevF) / 2;
@@ -5295,17 +5361,31 @@ function emitPathLight(s, sc, t, geo, glowAmt) {
   const win = Math.max(0.5, sc.fullWindow != null ? sc.fullWindow : 6);
   const closed = !!s.closed;
 
-  // One light per distinct TRACK, not per lane. With a Solo layout every
-  // lane points at the same track, and drawing it once per lane would stack
-  // four identical copies and quadruple the brightness — the same mistake
-  // chordGroups made before it deduped.
+  // One light per distinct PATH, keyed on track AND geometry.
+  //
+  // Keying on the track alone was wrong. It is right for a Solo layout, where
+  // every lane points at one track and traces the same curve, so drawing per
+  // lane would stack identical copies and multiply the brightness. But Clouds'
+  // three lanes are three different puffs sharing a track, and Spiral
+  // Staircase's are a left and a right column — deduping by track silently
+  // dropped all but the first, so only one cloud ever lit.
+  //
+  // Comparing a few sampled points separates the two cases without naming any
+  // shape: same track and same curve is a duplicate, same track and a
+  // different curve is a second path that deserves its own light.
   const drawn = [];
   for (let li = 0; li < s.lanes.length; li++) {
     const lane = sc.lanes[li];
     if (!lane.on) continue;
     const src = resolveTrack(s.id, li);
-    if (src < 0 || drawn.indexOf(src) >= 0) continue;
-    drawn.push(src);
+    if (src < 0) continue;
+    let key = src + '|';
+    for (let k = 1; k <= 4; k++) {
+      const q = placeAt(s, k / 5, li, geo, sc);
+      key += Math.round(q.x) + ',' + Math.round(q.y) + ';';
+    }
+    if (drawn.indexOf(key) >= 0) continue;
+    drawn.push(key);
 
     const sn = getScanner(s.id, li, t);
     const look = Math.max(wantWake ? decay * 3 : 0, wantFull ? win : 0);
