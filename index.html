@@ -5351,7 +5351,6 @@ function noteParam(n, sc, lane) {
   return lane.dir === 'backward' ? 1 - tt : tt;
 }
 
-const PL_SEGS = 110;         // samples along the path; enough to read as a line
 // 8 bins, not 20. At 20 a bin is under two semitones of a locked range and a
 // melody simply skips most of them — measured on the Allemande, coverage
 // topped out at 0.55 and the full shape could never fire at all.
@@ -5451,12 +5450,33 @@ function emitPathLight(s, sc, t, geo, glowAmt) {
 
     const col = rgb(lane.color || sc.glow || s.glow);
     const baseTh = Math.max(0.7, (s.half.thick || 4) * cfg.thick * (sc.thickScale != null ? sc.thickScale : 1) * 1.1);
+
+    // Segment count follows the path's PIXEL length, not a fixed 110. A fixed
+    // count makes the segments on a short path shorter than the capsule drawn
+    // over them: the Clouds' outline is only ~300px round, so 110 segments are
+    // 2.7px each against a 2.75px capsule pad, and every capsule overlapped the
+    // next by more than its own length. Additively that piles up two and three
+    // deep, and because these curves are parameterised by ANGLE rather than arc
+    // length the pile-up thins and thickens around the loop — which is what made
+    // the cloud read as a dotted line instead of a lit one.
+    let per = 0;
+    {
+      let q = placeAt(s, 0, li, geo, sc);
+      for (let k = 1; k <= 24; k++) {
+        const r = placeAt(s, k / 24, li, geo, sc);
+        const d = Math.hypot(r.x - q.x, r.y - q.y);
+        if (d < Math.max(geo.W, geo.H) * 0.5) per += d;
+        q = r;
+      }
+    }
+    const segs = Math.max(24, Math.min(160, Math.round(per / 6)));
+
     let prev = null;
-    for (let i = 0; i <= PL_SEGS; i++) {
-      const u = i / PL_SEGS;
+    for (let i = 0; i <= segs; i++) {
+      const u = i / segs;
       const p = placeAt(s, u, li, geo, sc);
       if (prev) {
-        const um = (u - 0.5 / PL_SEGS);
+        const um = (u - 0.5 / segs);
         let lit = full;
         if (wantWake) {
           for (let j = w.from; j < w.to; j++) {
@@ -5476,9 +5496,13 @@ function emitPathLight(s, sc, t, geo, glowAmt) {
           // path wrapping from end to start) — never bridge that gap
           if (len < Math.max(geo.W, geo.H) * 0.5) {
             const a = Math.min(1, lit * amt) * glowAmt;
+            // ABUTTING, not padded. The pad was what let them stack; without it
+            // every point on the path is covered exactly once and the light is
+            // even. Same conclusion the bent note glyphs reached.
+            const hxs = len * 0.5, why = baseTh * (0.45 + 0.55 * lit);
             push((p.x + prev.x) * 0.5, (p.y + prev.y) * 0.5,
-                 len * 0.5 + baseTh * 0.5, baseTh * (0.45 + 0.55 * lit),
-                 Math.atan2(dy, dx), 1, 1, 0,
+                 hxs, why,
+                 Math.atan2(dy, dx), Math.min(hxs, why), 1, 0,
                  col[0], col[1], col[2], a, 1, 0, 0);
           }
         }
